@@ -8,14 +8,30 @@ const router = express.Router();
 router.use(authenticateUser);
 
 /* =====================================================
-   DEBUG: Verify Auth Is Working
+   GET: Residencies Assigned to Manager
 ===================================================== */
 router.get("/residencies", async (req, res) => {
-  return res.json({
-    message: "Auth passed",
-    supabase_user_id: req.user?.sub, // Supabase puts user id in `sub`
-    user: req.user
-  });
+  try {
+    const result = await pool.query(
+      `
+      SELECT 
+        r.id,
+        r.name,
+        r.created_at
+      FROM manager_residencies mr
+      JOIN managers m ON m.id = mr.manager_id
+      JOIN residencies r ON r.id = mr.residency_id
+      WHERE m.supabase_user_id = $1
+      ORDER BY r.created_at DESC
+      `,
+      [req.user.sub]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching residencies:", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 /* =====================================================
@@ -25,6 +41,7 @@ router.get("/residencies/:residencyId/maintenance", async (req, res) => {
   const { residencyId } = req.params;
 
   try {
+    // Ensure manager has access to this residency
     const accessCheck = await pool.query(
       `
       SELECT 1
@@ -33,7 +50,7 @@ router.get("/residencies/:residencyId/maintenance", async (req, res) => {
       WHERE m.supabase_user_id = $1
       AND mr.residency_id = $2
       `,
-      [req.user.sub, residencyId] // 🔥 FIXED
+      [req.user.sub, residencyId]
     );
 
     if (accessCheck.rowCount === 0) {
@@ -78,6 +95,7 @@ router.patch("/maintenance/:id/status", async (req, res) => {
   }
 
   try {
+    // Ensure manager has access to this maintenance record
     const check = await pool.query(
       `
       SELECT 1
@@ -87,7 +105,7 @@ router.patch("/maintenance/:id/status", async (req, res) => {
       WHERE mr.id = $1
       AND m.supabase_user_id = $2
       `,
-      [id, req.user.sub] // 🔥 FIXED
+      [id, req.user.sub]
     );
 
     if (check.rowCount === 0) {
