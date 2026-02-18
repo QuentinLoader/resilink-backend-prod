@@ -8,26 +8,14 @@ const router = express.Router();
 router.use(requireAuth);
 
 /* =====================================================
-   GET: Manager's Residencies
+   DEBUG: Verify Auth Is Working
 ===================================================== */
 router.get("/residencies", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `
-      SELECT r.*
-      FROM residencies r
-      JOIN manager_residencies mr ON mr.residency_id = r.id
-      JOIN managers m ON m.id = mr.manager_id
-      WHERE m.supabase_user_id = $1
-      `,
-      [req.user.supabase_user_id]
-    );
-
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Error fetching residencies:", err);
-    res.status(500).json({ error: "Server error" });
-  }
+  return res.json({
+    message: "Auth passed",
+    supabase_user_id: req.user?.supabase_user_id,
+    user: req.user
+  });
 });
 
 /* =====================================================
@@ -37,7 +25,6 @@ router.get("/residencies/:residencyId/maintenance", async (req, res) => {
   const { residencyId } = req.params;
 
   try {
-    // 1️⃣ Verify manager has access to this residency
     const accessCheck = await pool.query(
       `
       SELECT 1
@@ -53,7 +40,6 @@ router.get("/residencies/:residencyId/maintenance", async (req, res) => {
       return res.status(403).json({ error: "Forbidden" });
     }
 
-    // 2️⃣ Fetch maintenance scoped to residency
     const result = await pool.query(
       `
       SELECT 
@@ -92,7 +78,6 @@ router.patch("/maintenance/:id/status", async (req, res) => {
   }
 
   try {
-    // Ensure maintenance belongs to a residency manager has access to
     const check = await pool.query(
       `
       SELECT 1
