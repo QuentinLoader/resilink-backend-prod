@@ -1,3 +1,6 @@
+console.log("SUPABASE_URL:", process.env.SUPABASE_URL);
+
+
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
