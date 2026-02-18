@@ -6,7 +6,7 @@ const app = express();
 app.use(express.json());
 
 // Health check
-app.get("/api/health", (_, res) => res.json({ status: "OK" }));
+app.get("/health", (_, res) => res.json({ status: "OK" }));
 
 // Mount routes
 app.use("/api/public", publicRoutes);
