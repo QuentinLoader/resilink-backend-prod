@@ -1,6 +1,6 @@
 import express from "express";
-import { pool } from "../api/db.js";
-import requireAuth from "../api/middleware/auth.js";
+import { pool } from "../db.js";
+import requireAuth from "../middleware/auth.js";
 
 const router = express.Router();
 
