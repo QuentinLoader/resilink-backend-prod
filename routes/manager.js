@@ -1,11 +1,11 @@
 import express from "express";
 import pool from "../db.js";
-import requireAuth from "../middleware/auth.js";
+import { authenticateUser } from "../middleware/auth.js";
 
 const router = express.Router();
 
 // 🔐 All manager routes require auth
-router.use(requireAuth);
+router.use(authenticateUser);
 
 /* =====================================================
    DEBUG: Verify Auth Is Working
@@ -13,7 +13,7 @@ router.use(requireAuth);
 router.get("/residencies", async (req, res) => {
   return res.json({
     message: "Auth passed",
-    supabase_user_id: req.user?.supabase_user_id,
+    supabase_user_id: req.user?.sub, // Supabase puts user id in `sub`
     user: req.user
   });
 });
@@ -33,7 +33,7 @@ router.get("/residencies/:residencyId/maintenance", async (req, res) => {
       WHERE m.supabase_user_id = $1
       AND mr.residency_id = $2
       `,
-      [req.user.supabase_user_id, residencyId]
+      [req.user.sub, residencyId] // 🔥 FIXED
     );
 
     if (accessCheck.rowCount === 0) {
@@ -87,7 +87,7 @@ router.patch("/maintenance/:id/status", async (req, res) => {
       WHERE mr.id = $1
       AND m.supabase_user_id = $2
       `,
-      [id, req.user.supabase_user_id]
+      [id, req.user.sub] // 🔥 FIXED
     );
 
     if (check.rowCount === 0) {
