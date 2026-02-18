@@ -1,23 +1,34 @@
-import jwt from "jsonwebtoken";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
-export default function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
+const SUPABASE_URL = process.env.SUPABASE_URL;
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+if (!SUPABASE_URL) {
+  throw new Error("SUPABASE_URL is not set in environment variables");
+}
 
-  const token = authHeader.split(" ")[1];
+// Supabase public JWKS endpoint
+const JWKS = createRemoteJWKSet(
+  new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`)
+);
 
+export default async function requireAuth(req, res, next) {
   try {
-    const decoded = jwt.verify(
-      token,
-      process.env.SUPABASE_JWT_SECRET
-    );
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer: `${SUPABASE_URL}/auth/v1`,
+      audience: "authenticated",
+    });
 
     req.user = {
-      supabase_user_id: decoded.sub,
-      email: decoded.email
+      supabase_user_id: payload.sub,
+      email: payload.email,
     };
 
     next();
