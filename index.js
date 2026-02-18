@@ -1,6 +1,6 @@
 import express from "express";
-import publicRoutes from "../routes/public.js";
-import managerRoutes from "../routes/Manager.js";
+import publicRoutes from "./routes/public.js";
+import managerRoutes from "./routes/manager.js";
 
 const app = express();
 app.use(express.json());
