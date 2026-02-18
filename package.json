@@ -2,9 +2,9 @@
   "name": "resilink-backend",
   "version": "1.0.0",
   "type": "module",
-  "main": "api/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node api/index.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
