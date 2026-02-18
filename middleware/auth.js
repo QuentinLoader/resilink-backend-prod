@@ -1,13 +1,28 @@
-export default function requireAuth(req, res, next) {
-  const supabaseUserId = req.headers["x-user-id"];
+import jwt from "jsonwebtoken";
 
-  if (!supabaseUserId) {
+export default function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  req.user = {
-    supabase_user_id: supabaseUserId,
-  };
+  const token = authHeader.split(" ")[1];
 
-  next();
+  try {
+    const decoded = jwt.verify(
+      token,
+      process.env.SUPABASE_JWT_SECRET
+    );
+
+    req.user = {
+      supabase_user_id: decoded.sub,
+      email: decoded.email
+    };
+
+    next();
+  } catch (err) {
+    console.error("JWT verification failed:", err.message);
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 }
