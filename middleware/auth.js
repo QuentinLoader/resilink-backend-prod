@@ -1,41 +1,24 @@
-console.log("SUPABASE_URL:", process.env.SUPABASE_URL);
+import jwt from "jsonwebtoken";
 
-import { createRemoteJWKSet, jwtVerify } from "jose";
-
-const SUPABASE_URL = process.env.SUPABASE_URL;
-
-if (!SUPABASE_URL) {
-  throw new Error("SUPABASE_URL is not set in environment variables");
-}
-
-// Supabase public JWKS endpoint
-const JWKS = createRemoteJWKSet(
-  new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`)
-);
-
-export default async function requireAuth(req, res, next) {
+export function authenticateUser(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json({ error: "Missing token" });
     }
 
     const token = authHeader.split(" ")[1];
 
-    const { payload } = await jwtVerify(token, JWKS, {
-      issuer: `${SUPABASE_URL}/auth/v1`,
-      audience: "authenticated",
-    });
+    const decoded = jwt.verify(
+      token,
+      process.env.SUPABASE_JWT_SECRET
+    );
 
-    req.user = {
-      supabase_user_id: payload.sub,
-      email: payload.email,
-    };
-
+    req.user = decoded;
     next();
   } catch (err) {
     console.error("JWT verification failed:", err.message);
-    return res.status(401).json({ error: "Unauthorized" });
+    return res.status(401).json({ error: "Invalid token" });
   }
 }
