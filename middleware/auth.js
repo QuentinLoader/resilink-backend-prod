@@ -1,4 +1,10 @@
-import fetch from "node-fetch";
+import { jwtVerify, createRemoteJWKSet } from "jose";
+
+const SUPABASE_URL = "https://uxygywxiwkkaokbofvob.supabase.co";
+
+const JWKS = createRemoteJWKSet(
+  new URL(`${SUPABASE_URL}/auth/v1/keys`)
+);
 
 export async function authenticateUser(req, res, next) {
   try {
@@ -10,44 +16,17 @@ export async function authenticateUser(req, res, next) {
 
     const token = authHeader.split(" ")[1];
 
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer: `${SUPABASE_URL}/auth/v1`,
+      audience: "authenticated",
+    });
 
-    if (!supabaseUrl || !supabaseAnonKey) {
-      console.error("Supabase environment variables missing");
-      return res.status(500).json({ error: "Server misconfigured" });
-    }
-
-    const response = await fetch(
-      `${supabaseUrl}/auth/v1/user`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          apikey: supabaseAnonKey,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      return res.status(401).json({ error: "Invalid token" });
-    }
-
-    const user = await response.json();
-
-    if (!user || !user.id) {
-      return res.status(401).json({ error: "Invalid token" });
-    }
-
-    // Attach Supabase user info to request
-    req.user = {
-      sub: user.id,
-      email: user.email,
-    };
+    // Attach verified JWT payload
+    req.user = payload;
 
     next();
   } catch (err) {
-    console.error("Auth middleware error:", err);
-    return res.status(500).json({ error: "Authentication failed" });
+    console.error("JWT verification failed:", err);
+    return res.status(401).json({ error: "Invalid or expired token" });
   }
 }
