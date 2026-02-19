@@ -43,8 +43,8 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
     // Create residency
     const residencyResult = await pool.query(
       `
-      INSERT INTO residencies (name, property_type)
-      VALUES ($1, $2)
+      INSERT INTO residencies (name)
+      VALUES ($1)
       RETURNING id
       `,
       [residency_name, property_type]
