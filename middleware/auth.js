@@ -1,9 +1,7 @@
 import { jwtVerify, createRemoteJWKSet } from "jose";
 
-const SUPABASE_URL = "https://uxygywxiwkkaokbofvob.supabase.co";
-
 const JWKS = createRemoteJWKSet(
-  new URL(`${SUPABASE_URL}/auth/v1/keys`)
+  new URL("https://uxygywxiwkkaokbofvob.supabase.co/auth/v1/keys")
 );
 
 export async function authenticateUser(req, res, next) {
@@ -16,12 +14,8 @@ export async function authenticateUser(req, res, next) {
 
     const token = authHeader.split(" ")[1];
 
-    const { payload } = await jwtVerify(token, JWKS, {
-      issuer: `${SUPABASE_URL}/auth/v1`,
-      audience: "authenticated",
-    });
+    const { payload } = await jwtVerify(token, JWKS);
 
-    // Attach verified JWT payload
     req.user = payload;
 
     next();
