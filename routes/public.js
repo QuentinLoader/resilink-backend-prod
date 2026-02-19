@@ -10,6 +10,7 @@ const router = express.Router();
 router.post("/register-manager", authenticateUser, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub;
+    const email = req.user.email;
 
     const { full_name, residency_name, property_type } = req.body;
 
@@ -34,7 +35,7 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
       VALUES ($1, $2, $3)
       RETURNING id
       `,
-      [supabaseUserId, full_name]
+      [supabaseUserId, full_name, email]
     );
 
     const managerId = managerResult.rows[0].id;
