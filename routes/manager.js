@@ -39,6 +39,7 @@ router.get("/residencies", async (req, res) => {
 ===================================================== */
 router.get("/residencies/:residencyId/maintenance", async (req, res) => {
   const { residencyId } = req.params;
+  const { status } = req.query; // optional filter
 
   try {
     // Ensure manager has access to this residency
@@ -57,8 +58,7 @@ router.get("/residencies/:residencyId/maintenance", async (req, res) => {
       return res.status(403).json({ error: "Forbidden" });
     }
 
-    const result = await pool.query(
-      `
+    let query = `
       SELECT 
         m.id,
         m.status,
@@ -66,17 +66,25 @@ router.get("/residencies/:residencyId/maintenance", async (req, res) => {
         m.description,
         m.created_at,
         r.full_name AS resident_name,
-        p.unit_number
+        r.unit_number
       FROM maintenance_requests m
       JOIN residents r ON m.resident_id = r.id
-      JOIN properties p ON r.property_id = p.id
       WHERE m.residency_id = $1
-      ORDER BY m.created_at DESC
-      `,
-      [residencyId]
-    );
+    `;
+
+    const values = [residencyId];
+
+    if (status) {
+      query += ` AND m.status = $2`;
+      values.push(status);
+    }
+
+    query += ` ORDER BY m.created_at DESC`;
+
+    const result = await pool.query(query, values);
 
     res.json(result.rows);
+
   } catch (err) {
     console.error("Error fetching maintenance:", err);
     res.status(500).json({ error: "Server error" });
@@ -100,8 +108,10 @@ router.patch("/maintenance/:id/status", async (req, res) => {
       `
       SELECT 1
       FROM maintenance_requests mr
-      JOIN manager_residencies mres ON mres.residency_id = mr.residency_id
-      JOIN managers m ON m.id = mres.manager_id
+      JOIN manager_residencies mres 
+        ON mres.residency_id = mr.residency_id
+      JOIN managers m 
+        ON m.id = mres.manager_id
       WHERE mr.id = $1
       AND m.supabase_user_id = $2
       `,
@@ -124,6 +134,7 @@ router.patch("/maintenance/:id/status", async (req, res) => {
     );
 
     res.json(update.rows[0]);
+
   } catch (err) {
     console.error("Error updating status:", err);
     res.status(500).json({ error: "Server error" });
