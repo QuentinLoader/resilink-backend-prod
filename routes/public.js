@@ -28,7 +28,9 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
       return res.status(400).json({ error: "Manager already exists" });
     }
 
-    // Create manager
+    /* ===============================
+       Create Manager
+    =============================== */
     const managerResult = await pool.query(
       `
       INSERT INTO managers (supabase_user_id, full_name, email)
@@ -40,11 +42,13 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
 
     const managerId = managerResult.rows[0].id;
 
-    // Create residency
+    /* ===============================
+       Create Residency
+    =============================== */
     const residencyResult = await pool.query(
       `
-      INSERT INTO residencies (name)
-      VALUES ($1)
+      INSERT INTO residencies (name, property_type)
+      VALUES ($1, $2)
       RETURNING id
       `,
       [residency_name, property_type]
@@ -52,7 +56,9 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
 
     const residencyId = residencyResult.rows[0].id;
 
-    // Link manager to residency
+    /* ===============================
+       Link Manager to Residency
+    =============================== */
     await pool.query(
       `
       INSERT INTO manager_residencies (manager_id, residency_id)
