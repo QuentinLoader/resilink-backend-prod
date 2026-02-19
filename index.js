@@ -1,12 +1,17 @@
 import express from "express";
+import cors from "cors";
 import publicRoutes from "./routes/public.js";
 import managerRoutes from "./routes/manager.js";
 
 const app = express();
+
+app.use(cors());
 app.use(express.json());
 
 // Health check
-app.get("/health", (_, res) => res.json({ status: "OK" }));
+app.get("/api/health", (_, res) => {
+  res.json({ status: "OK" });
+});
 
 // Mount routes
 app.use("/api/public", publicRoutes);
