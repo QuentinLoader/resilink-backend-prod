@@ -2,9 +2,9 @@ import { jwtVerify, createRemoteJWKSet } from "jose";
 
 const SUPABASE_PROJECT_URL = "https://uxygywxiwkkaokbofvob.supabase.co";
 
-// Supabase public signing keys
+// ✅ Correct JWKS endpoint
 const JWKS = createRemoteJWKSet(
-  new URL(`${SUPABASE_PROJECT_URL}/auth/v1/keys`)
+  new URL(`${SUPABASE_PROJECT_URL}/auth/v1/.well-known/jwks.json`)
 );
 
 export async function authenticateUser(req, res, next) {
@@ -17,12 +17,8 @@ export async function authenticateUser(req, res, next) {
 
     const token = authHeader.split(" ")[1];
 
-    const { payload } = await jwtVerify(token, JWKS, {
-      issuer: `${SUPABASE_PROJECT_URL}/auth/v1`,
-      audience: "authenticated",
-    });
+    const { payload } = await jwtVerify(token, JWKS);
 
-    // Attach verified user payload
     req.user = payload;
 
     next();
