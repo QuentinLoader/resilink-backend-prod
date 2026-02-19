@@ -19,7 +19,6 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // Prevent duplicate manager
     const existingManager = await pool.query(
       "SELECT id FROM managers WHERE supabase_user_id = $1",
       [supabaseUserId]
@@ -29,9 +28,6 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
       return res.status(400).json({ error: "Manager already exists" });
     }
 
-    /* ===============================
-       Create Manager
-    =============================== */
     const managerResult = await pool.query(
       `
       INSERT INTO managers (supabase_user_id, full_name, email)
@@ -43,14 +39,8 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
 
     const managerId = managerResult.rows[0].id;
 
-    /* ===============================
-       Generate Access Code
-    =============================== */
     const accessCode = crypto.randomBytes(3).toString("hex").toUpperCase();
 
-    /* ===============================
-       Create Residency
-    =============================== */
     const residencyResult = await pool.query(
       `
       INSERT INTO residencies (name, property_type, access_code)
@@ -62,9 +52,6 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
 
     const residencyId = residencyResult.rows[0].id;
 
-    /* ===============================
-       Link Manager to Residency
-    =============================== */
     await pool.query(
       `
       INSERT INTO manager_residencies (manager_id, residency_id)
@@ -73,14 +60,64 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
       [managerId, residencyId]
     );
 
-    res.json({ 
+    // 🔹 Auto-create template
+    await pool.query(
+      `
+      INSERT INTO residency_templates (residency_id)
+      VALUES ($1)
+      `,
+      [residencyId]
+    );
+
+    res.json({
       success: true,
-      access_code: accessCode  // optional but useful
+      access_code: accessCode
     });
 
   } catch (err) {
     console.error("Register manager error:", err);
     res.status(500).json({ error: "Registration failed" });
+  }
+});
+
+/* =====================================================
+   GET: Template by Access Code (Bot)
+===================================================== */
+router.get("/template/:accessCode", async (req, res) => {
+  const { accessCode } = req.params;
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT rt.id
+      FROM residencies r
+      JOIN residency_templates rt ON rt.residency_id = r.id
+      WHERE r.access_code = $1
+      `,
+      [accessCode]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Invalid access code" });
+    }
+
+    const templateId = result.rows[0].id;
+
+    const items = await pool.query(
+      `
+      SELECT category, label, content
+      FROM residency_template_items
+      WHERE template_id = $1
+      ORDER BY category, sort_order
+      `,
+      [templateId]
+    );
+
+    res.json(items.rows);
+
+  } catch (err) {
+    console.error("Error fetching public template:", err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 

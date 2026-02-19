@@ -39,10 +39,10 @@ router.get("/residencies", async (req, res) => {
 ===================================================== */
 router.get("/residencies/:residencyId/maintenance", async (req, res) => {
   const { residencyId } = req.params;
-  const { status } = req.query; // optional filter
+  const { status } = req.query;
 
   try {
-    // Ensure manager has access to this residency
+    // Access control
     const accessCheck = await pool.query(
       `
       SELECT 1
@@ -103,7 +103,6 @@ router.patch("/maintenance/:id/status", async (req, res) => {
   }
 
   try {
-    // Ensure manager has access to this maintenance record
     const check = await pool.query(
       `
       SELECT 1
@@ -137,6 +136,99 @@ router.patch("/maintenance/:id/status", async (req, res) => {
 
   } catch (err) {
     console.error("Error updating status:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* =====================================================
+   GET: Residency Template (Scoped)
+===================================================== */
+router.get("/residencies/:residencyId/template", async (req, res) => {
+  const { residencyId } = req.params;
+
+  try {
+    const accessCheck = await pool.query(
+      `
+      SELECT 1
+      FROM manager_residencies mr
+      JOIN managers m ON m.id = mr.manager_id
+      WHERE m.supabase_user_id = $1
+      AND mr.residency_id = $2
+      `,
+      [req.user.sub, residencyId]
+    );
+
+    if (accessCheck.rowCount === 0) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const templateResult = await pool.query(
+      `
+      SELECT id
+      FROM residency_templates
+      WHERE residency_id = $1
+      `,
+      [residencyId]
+    );
+
+    if (templateResult.rowCount === 0) {
+      return res.json({});
+    }
+
+    const templateId = templateResult.rows[0].id;
+
+    const items = await pool.query(
+      `
+      SELECT id, category, label, content, sort_order
+      FROM residency_template_items
+      WHERE template_id = $1
+      ORDER BY category, sort_order
+      `,
+      [templateId]
+    );
+
+    const grouped = items.rows.reduce((acc, item) => {
+      if (!acc[item.category]) acc[item.category] = [];
+      acc[item.category].push(item);
+      return acc;
+    }, {});
+
+    res.json(grouped);
+
+  } catch (err) {
+    console.error("Error fetching template:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* =====================================================
+   PATCH: Update Template Item
+===================================================== */
+router.patch("/template-items/:id", async (req, res) => {
+  const { id } = req.params;
+  const { label, content } = req.body;
+
+  if (!label || !content) {
+    return res.status(400).json({ error: "Label and content required" });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      UPDATE residency_template_items
+      SET label = $1,
+          content = $2,
+          updated_at = now()
+      WHERE id = $3
+      RETURNING *
+      `,
+      [label, content, id]
+    );
+
+    res.json(result.rows[0]);
+
+  } catch (err) {
+    console.error("Error updating template item:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
