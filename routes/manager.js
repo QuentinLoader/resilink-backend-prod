@@ -1,4 +1,5 @@
 import express from "express";
+import crypto from "crypto";
 import pool from "../db.js";
 import { authenticateUser } from "../middleware/auth.js";
 
@@ -14,10 +15,7 @@ router.get("/residencies", async (req, res) => {
   try {
     const result = await pool.query(
       `
-      SELECT 
-        r.id,
-        r.name,
-        r.created_at
+      SELECT r.id, r.name, r.created_at
       FROM manager_residencies mr
       JOIN managers m ON m.id = mr.manager_id
       JOIN residencies r ON r.id = mr.residency_id
@@ -35,14 +33,72 @@ router.get("/residencies", async (req, res) => {
 });
 
 /* =====================================================
-   GET: Maintenance by Residency (Scoped Properly)
+   POST: Add Residency
+===================================================== */
+router.post("/residencies", async (req, res) => {
+  const { name, property_type } = req.body;
+
+  if (!name || !property_type) {
+    return res.status(400).json({ error: "Name and property_type required" });
+  }
+
+  try {
+    const managerResult = await pool.query(
+      `SELECT id FROM managers WHERE supabase_user_id = $1`,
+      [req.user.sub]
+    );
+
+    if (managerResult.rowCount === 0) {
+      return res.status(404).json({ error: "Manager not found" });
+    }
+
+    const managerId = managerResult.rows[0].id;
+    const accessCode = crypto.randomBytes(3).toString("hex").toUpperCase();
+
+    const residencyResult = await pool.query(
+      `
+      INSERT INTO residencies (name, property_type, access_code)
+      VALUES ($1, $2, $3)
+      RETURNING *
+      `,
+      [name, property_type, accessCode]
+    );
+
+    const residency = residencyResult.rows[0];
+
+    await pool.query(
+      `
+      INSERT INTO manager_residencies (manager_id, residency_id)
+      VALUES ($1, $2)
+      `,
+      [managerId, residency.id]
+    );
+
+    await pool.query(
+      `
+      INSERT INTO residency_templates (residency_id)
+      VALUES ($1)
+      ON CONFLICT (residency_id) DO NOTHING
+      `,
+      [residency.id]
+    );
+
+    res.json({ residency, access_code: accessCode });
+
+  } catch (err) {
+    console.error("Error creating residency:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* =====================================================
+   GET: Maintenance by Residency (Properly Scoped)
 ===================================================== */
 router.get("/residencies/:residencyId/maintenance", async (req, res) => {
   const { residencyId } = req.params;
   const { status } = req.query;
 
   try {
-    // 🔐 Ensure manager has access to this residency
     const accessCheck = await pool.query(
       `
       SELECT 1
@@ -58,7 +114,6 @@ router.get("/residencies/:residencyId/maintenance", async (req, res) => {
       return res.status(403).json({ error: "Forbidden" });
     }
 
-    // 🔥 Proper relational scoping via properties
     let query = `
       SELECT 
         m.id,
@@ -94,14 +149,14 @@ router.get("/residencies/:residencyId/maintenance", async (req, res) => {
 });
 
 /* =====================================================
-   PATCH: Update Maintenance Status (Secure)
+   PATCH: Update Maintenance Status
 ===================================================== */
 router.patch("/maintenance/:id/status", async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
   if (!status) {
-    return res.status(400).json({ error: "Status is required" });
+    return res.status(400).json({ error: "Status required" });
   }
 
   try {
@@ -143,7 +198,7 @@ router.patch("/maintenance/:id/status", async (req, res) => {
 });
 
 /* =====================================================
-   GET: Residency Template (Scoped)
+   GET: Residency Template
 ===================================================== */
 router.get("/residencies/:residencyId/template", async (req, res) => {
   const { residencyId } = req.params;
@@ -165,11 +220,7 @@ router.get("/residencies/:residencyId/template", async (req, res) => {
     }
 
     const templateResult = await pool.query(
-      `
-      SELECT id
-      FROM residency_templates
-      WHERE residency_id = $1
-      `,
+      `SELECT id FROM residency_templates WHERE residency_id = $1`,
       [residencyId]
     );
 
@@ -199,6 +250,71 @@ router.get("/residencies/:residencyId/template", async (req, res) => {
 
   } catch (err) {
     console.error("Error fetching template:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* =====================================================
+   POST: Create Template Item
+===================================================== */
+router.post("/residencies/:residencyId/template-items", async (req, res) => {
+  const { residencyId } = req.params;
+  const { category, label, content } = req.body;
+
+  if (!category || !label || !content) {
+    return res.status(400).json({ error: "Category, label and content required" });
+  }
+
+  const allowed = [
+    "Utilities",
+    "Emergency Contacts",
+    "Rules",
+    "Amenities",
+    "Security",
+    "General Info"
+  ];
+
+  if (!allowed.includes(category)) {
+    return res.status(400).json({ error: "Invalid category" });
+  }
+
+  try {
+    const templateResult = await pool.query(
+      `SELECT id FROM residency_templates WHERE residency_id = $1`,
+      [residencyId]
+    );
+
+    if (templateResult.rowCount === 0) {
+      return res.status(400).json({ error: "Template not found" });
+    }
+
+    const templateId = templateResult.rows[0].id;
+
+    const orderResult = await pool.query(
+      `
+      SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order
+      FROM residency_template_items
+      WHERE template_id = $1
+      `,
+      [templateId]
+    );
+
+    const sortOrder = orderResult.rows[0].next_order;
+
+    const insert = await pool.query(
+      `
+      INSERT INTO residency_template_items
+      (template_id, category, label, content, sort_order)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+      `,
+      [templateId, category, label, content, sortOrder]
+    );
+
+    res.json(insert.rows[0]);
+
+  } catch (err) {
+    console.error("Error creating template item:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
