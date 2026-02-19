@@ -13,6 +13,10 @@ app.get("/api/health", (_, res) => {
   res.json({ status: "OK" });
 });
 
+app.get("/", (_, res) => {
+  res.send("ResiLink API OK");
+});
+
 // Mount routes
 app.use("/api/public", publicRoutes);
 app.use("/api/manager", managerRoutes);
