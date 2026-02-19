@@ -35,14 +35,14 @@ router.get("/residencies", async (req, res) => {
 });
 
 /* =====================================================
-   GET: Maintenance by Residency (Scoped)
+   GET: Maintenance by Residency (Scoped Properly)
 ===================================================== */
 router.get("/residencies/:residencyId/maintenance", async (req, res) => {
   const { residencyId } = req.params;
   const { status } = req.query;
 
   try {
-    // Access control
+    // 🔐 Ensure manager has access to this residency
     const accessCheck = await pool.query(
       `
       SELECT 1
@@ -58,6 +58,7 @@ router.get("/residencies/:residencyId/maintenance", async (req, res) => {
       return res.status(403).json({ error: "Forbidden" });
     }
 
+    // 🔥 Proper relational scoping via properties
     let query = `
       SELECT 
         m.id,
@@ -69,7 +70,8 @@ router.get("/residencies/:residencyId/maintenance", async (req, res) => {
         r.unit_number
       FROM maintenance_requests m
       JOIN residents r ON m.resident_id = r.id
-      WHERE m.residency_id = $1
+      JOIN properties p ON r.property_id = p.id
+      WHERE p.residency_id = $1
     `;
 
     const values = [residencyId];
@@ -107,10 +109,10 @@ router.patch("/maintenance/:id/status", async (req, res) => {
       `
       SELECT 1
       FROM maintenance_requests mr
-      JOIN manager_residencies mres 
-        ON mres.residency_id = mr.residency_id
-      JOIN managers m 
-        ON m.id = mres.manager_id
+      JOIN residents r ON mr.resident_id = r.id
+      JOIN properties p ON r.property_id = p.id
+      JOIN manager_residencies mres ON mres.residency_id = p.residency_id
+      JOIN managers m ON m.id = mres.manager_id
       WHERE mr.id = $1
       AND m.supabase_user_id = $2
       `,
