@@ -248,4 +248,62 @@ router.get("/residencies/:residencyId/maintenance", async (req, res) => {
   }
 });
 
+/* =====================================================
+   GET: Residency Template
+===================================================== */
+router.get("/residencies/:residencyId/template", async (req, res) => {
+  const { residencyId } = req.params;
+
+  try {
+    // Ensure manager has access
+    const accessCheck = await pool.query(
+      `
+      SELECT 1
+      FROM manager_residencies mr
+      JOIN managers m ON m.id = mr.manager_id
+      WHERE m.supabase_user_id = $1
+      AND mr.residency_id = $2
+      `,
+      [req.user.sub, residencyId]
+    );
+
+    if (accessCheck.rowCount === 0) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const templateResult = await pool.query(
+      `SELECT id FROM residency_templates WHERE residency_id = $1`,
+      [residencyId]
+    );
+
+    if (templateResult.rowCount === 0) {
+      return res.json({});
+    }
+
+    const templateId = templateResult.rows[0].id;
+
+    const items = await pool.query(
+      `
+      SELECT id, category, label, content, sort_order
+      FROM residency_template_items
+      WHERE template_id = $1
+      ORDER BY category, sort_order
+      `,
+      [templateId]
+    );
+
+    const grouped = items.rows.reduce((acc, item) => {
+      if (!acc[item.category]) acc[item.category] = [];
+      acc[item.category].push(item);
+      return acc;
+    }, {});
+
+    res.json(grouped);
+
+  } catch (err) {
+    console.error("Error fetching template:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 export default router;
