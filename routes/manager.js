@@ -15,10 +15,12 @@ async function generateUniqueAccessCode() {
 
   while (exists) {
     accessCode = crypto.randomBytes(3).toString("hex").toUpperCase();
+
     const check = await pool.query(
       `SELECT 1 FROM residencies WHERE access_code = $1`,
       [accessCode]
     );
+
     exists = check.rowCount > 0;
   }
 
@@ -26,7 +28,7 @@ async function generateUniqueAccessCode() {
 }
 
 /* =====================================================
-   GET: Manager Profile (for info card)
+   GET: Manager Profile
 ===================================================== */
 router.get("/me", async (req, res) => {
   try {
@@ -47,6 +49,31 @@ router.get("/me", async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error("Error fetching manager profile:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* =====================================================
+   GET: Residencies
+===================================================== */
+router.get("/residencies", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT r.id, r.name, r.created_at
+      FROM manager_residencies mr
+      JOIN managers m ON m.id = mr.manager_id
+      JOIN residencies r ON r.id = mr.residency_id
+      WHERE m.supabase_user_id = $1
+      AND r.is_active = true
+      ORDER BY r.created_at DESC
+      `,
+      [req.user.sub]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching residencies:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -147,7 +174,6 @@ router.patch("/residencies/:id", async (req, res) => {
     );
 
     res.json(result.rows[0]);
-
   } catch (err) {
     console.error("Error renaming residency:", err);
     res.status(500).json({ error: "Server error" });
@@ -175,9 +201,51 @@ router.delete("/residencies/:id", async (req, res) => {
     );
 
     res.json({ success: true });
-
   } catch (err) {
     console.error("Error deleting residency:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
+
+/* =====================================================
+   GET: Maintenance
+===================================================== */
+router.get("/residencies/:residencyId/maintenance", async (req, res) => {
+  const { residencyId } = req.params;
+  const { status } = req.query;
+
+  try {
+    let query = `
+      SELECT 
+        m.id,
+        m.status,
+        m.title,
+        m.description,
+        m.created_at,
+        r.full_name AS resident_name,
+        r.unit_number
+      FROM maintenance_requests m
+      JOIN residents r ON m.resident_id = r.id
+      JOIN properties p ON r.property_id = p.id
+      WHERE p.residency_id = $1
+    `;
+
+    const values = [residencyId];
+
+    if (status) {
+      query += ` AND m.status = $2`;
+      values.push(status);
+    }
+
+    query += ` ORDER BY m.created_at DESC`;
+
+    const result = await pool.query(query, values);
+    res.json(result.rows);
+
+  } catch (err) {
+    console.error("Error fetching maintenance:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+export default router;

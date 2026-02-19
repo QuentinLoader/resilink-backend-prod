@@ -14,12 +14,10 @@ async function generateUniqueAccessCode() {
 
   while (exists) {
     accessCode = crypto.randomBytes(3).toString("hex").toUpperCase();
-
     const check = await pool.query(
       `SELECT 1 FROM residencies WHERE access_code = $1`,
       [accessCode]
     );
-
     exists = check.rowCount > 0;
   }
 
@@ -27,32 +25,14 @@ async function generateUniqueAccessCode() {
 }
 
 /* =====================================================
-   POST: Register Manager (Authenticated)
+   POST: Register Manager
 ===================================================== */
 router.post("/register-manager", authenticateUser, async (req, res) => {
   try {
+    const { full_name, residency_name, property_type } = req.body;
     const supabaseUserId = req.user.sub;
     const email = req.user.email;
 
-    const { full_name, residency_name, property_type } = req.body;
-
-    if (!full_name || !residency_name || !property_type) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
-
-    // Prevent duplicate manager
-    const existingManager = await pool.query(
-      `SELECT id FROM managers WHERE supabase_user_id = $1`,
-      [supabaseUserId]
-    );
-
-    if (existingManager.rowCount > 0) {
-      return res.status(400).json({ error: "Manager already exists" });
-    }
-
-    /* ===============================
-       Create Manager
-    =============================== */
     const managerResult = await pool.query(
       `
       INSERT INTO managers (supabase_user_id, full_name, email)
@@ -63,15 +43,8 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
     );
 
     const managerId = managerResult.rows[0].id;
-
-    /* ===============================
-       Generate Unique Access Code
-    =============================== */
     const accessCode = await generateUniqueAccessCode();
 
-    /* ===============================
-       Create Residency
-    =============================== */
     const residencyResult = await pool.query(
       `
       INSERT INTO residencies (name, property_type, access_code)
@@ -83,34 +56,21 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
 
     const residencyId = residencyResult.rows[0].id;
 
-    /* ===============================
-       Link Manager to Residency
-    =============================== */
     await pool.query(
-      `
-      INSERT INTO manager_residencies (manager_id, residency_id)
-      VALUES ($1, $2)
-      `,
+      `INSERT INTO manager_residencies (manager_id, residency_id)
+       VALUES ($1, $2)`,
       [managerId, residencyId]
     );
 
-    /* ===============================
-       Create Template
-    =============================== */
     const templateResult = await pool.query(
-      `
-      INSERT INTO residency_templates (residency_id)
-      VALUES ($1)
-      RETURNING id
-      `,
+      `INSERT INTO residency_templates (residency_id)
+       VALUES ($1)
+       RETURNING id`,
       [residencyId]
     );
 
     const templateId = templateResult.rows[0].id;
 
-    /* ===============================
-       Seed Default Template Items
-    =============================== */
     const defaultItems = [
       ["Utilities", "Electricity Provider"],
       ["Emergency Contacts", "Security Contact"],
@@ -127,20 +87,11 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
         (template_id, category, label, content, sort_order)
         VALUES ($1, $2, $3, $4, $5)
         `,
-        [
-          templateId,
-          defaultItems[i][0],
-          defaultItems[i][1],
-          "Enter details here.",
-          i + 1
-        ]
+        [templateId, defaultItems[i][0], defaultItems[i][1], "Enter details here.", i + 1]
       );
     }
 
-    res.json({
-      success: true,
-      access_code: accessCode
-    });
+    res.json({ success: true, access_code: accessCode });
 
   } catch (err) {
     console.error("Register manager error:", err);
@@ -149,7 +100,7 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
 });
 
 /* =====================================================
-   GET: Template by Access Code (Public/Bot)
+   GET: Template by Access Code
 ===================================================== */
 router.get("/template/:accessCode", async (req, res) => {
   const { accessCode } = req.params;
