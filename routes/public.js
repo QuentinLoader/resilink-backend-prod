@@ -1,4 +1,5 @@
 import express from "express";
+import crypto from "crypto";
 import pool from "../db.js";
 import { authenticateUser } from "../middleware/auth.js";
 
@@ -43,15 +44,20 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
     const managerId = managerResult.rows[0].id;
 
     /* ===============================
+       Generate Access Code
+    =============================== */
+    const accessCode = crypto.randomBytes(3).toString("hex").toUpperCase();
+
+    /* ===============================
        Create Residency
     =============================== */
     const residencyResult = await pool.query(
       `
-      INSERT INTO residencies (name, property_type)
-      VALUES ($1, $2)
+      INSERT INTO residencies (name, property_type, access_code)
+      VALUES ($1, $2, $3)
       RETURNING id
       `,
-      [residency_name, property_type]
+      [residency_name, property_type, accessCode]
     );
 
     const residencyId = residencyResult.rows[0].id;
@@ -67,7 +73,11 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
       [managerId, residencyId]
     );
 
-    res.json({ success: true });
+    res.json({ 
+      success: true,
+      access_code: accessCode  // optional but useful
+    });
+
   } catch (err) {
     console.error("Register manager error:", err);
     res.status(500).json({ error: "Registration failed" });
