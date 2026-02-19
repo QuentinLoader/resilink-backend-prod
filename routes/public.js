@@ -30,8 +30,8 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
     // Create manager
     const managerResult = await pool.query(
       `
-      INSERT INTO managers (supabase_user_id, full_name, role)
-      VALUES ($1, $2, 'landlord')
+      INSERT INTO managers (supabase_user_id, full_name, email)
+      VALUES ($1, $2, $3)
       RETURNING id
       `,
       [supabaseUserId, full_name]
