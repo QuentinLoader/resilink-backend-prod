@@ -118,7 +118,7 @@ router.get("/residencies", async (req, res) => {
 });
 
 /* =====================================================
-   GET: Residency Template
+   GET: Residency Template (Flat Architecture)
 ===================================================== */
 router.get("/residencies/:id/template", async (req, res) => {
   const { id } = req.params;
@@ -126,7 +126,7 @@ router.get("/residencies/:id/template", async (req, res) => {
   try {
     const managerId = await ensureManager(req);
 
-    // Verify manager has access to residency
+    // Verify access
     const accessCheck = await pool.query(
       `
       SELECT 1
@@ -147,17 +147,22 @@ router.get("/residencies/:id/template", async (req, res) => {
       SELECT id, version
       FROM residency_templates
       WHERE residency_id = $1
+      LIMIT 1
       `,
       [id]
     );
 
     if (templateResult.rowCount === 0) {
-      return res.json({ template: null, items: [] });
+      return res.json({
+        template_id: null,
+        version: null,
+        items: []
+      });
     }
 
     const template = templateResult.rows[0];
 
-    // Fetch template items
+    // Fetch items (flat + sorted)
     const itemsResult = await pool.query(
       `
       SELECT id, category, label, content, sort_order
@@ -181,7 +186,7 @@ router.get("/residencies/:id/template", async (req, res) => {
 });
 
 /* =====================================================
-   POST: Add Residency (Transactional)
+   POST: Add Residency (Transactional + Safe)
 ===================================================== */
 router.post("/residencies", async (req, res) => {
   const { residency_name, property_type } = req.body;
@@ -200,6 +205,7 @@ router.post("/residencies", async (req, res) => {
     const managerId = await ensureManager(req);
     const accessCode = await generateUniqueAccessCode();
 
+    // Create residency
     const residencyResult = await client.query(
       `
       INSERT INTO residencies (name, property_type, access_code)
@@ -209,8 +215,13 @@ router.post("/residencies", async (req, res) => {
       [residency_name, property_type, accessCode]
     );
 
+    if (residencyResult.rowCount === 0) {
+      throw new Error("Residency insert failed");
+    }
+
     const residency = residencyResult.rows[0];
 
+    // Link manager
     await client.query(
       `
       INSERT INTO manager_residencies (manager_id, residency_id)
@@ -219,10 +230,13 @@ router.post("/residencies", async (req, res) => {
       [managerId, residency.id]
     );
 
+    // Create template (avoid duplicate error)
     const templateResult = await client.query(
       `
       INSERT INTO residency_templates (residency_id, version)
       VALUES ($1, 1)
+      ON CONFLICT (residency_id)
+      DO UPDATE SET version = residency_templates.version
       RETURNING id
       `,
       [residency.id]
@@ -230,6 +244,7 @@ router.post("/residencies", async (req, res) => {
 
     const templateId = templateResult.rows[0].id;
 
+    // Seed template items
     const defaultItems = [
       ["Utilities", "Electricity Provider"],
       ["Emergency Contacts", "Security Contact"],
