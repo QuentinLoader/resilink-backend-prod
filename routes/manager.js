@@ -27,9 +27,11 @@ async function ensureManager(req) {
   }
 
   const insert = await pool.query(
-    `INSERT INTO managers (supabase_user_id, email)
-     VALUES ($1, $2)
-     RETURNING id`,
+    `
+    INSERT INTO managers (supabase_user_id, email)
+    VALUES ($1, $2)
+    RETURNING id
+    `,
     [supabaseUserId, email]
   );
 
@@ -116,7 +118,7 @@ router.get("/residencies", async (req, res) => {
 });
 
 /* =====================================================
-   POST: Add Residency (Transactional + Fixed Payload)
+   POST: Add Residency (Transactional + Fully Safe)
 ===================================================== */
 router.post("/residencies", async (req, res) => {
   const { residency_name, property_type } = req.body;
@@ -135,6 +137,7 @@ router.post("/residencies", async (req, res) => {
     const managerId = await ensureManager(req);
     const accessCode = await generateUniqueAccessCode();
 
+    // Insert residency
     const residencyResult = await client.query(
       `
       INSERT INTO residencies (name, property_type, access_code)
@@ -150,16 +153,22 @@ router.post("/residencies", async (req, res) => {
 
     const residency = residencyResult.rows[0];
 
+    // Link manager
     await client.query(
-      `INSERT INTO manager_residencies (manager_id, residency_id)
-       VALUES ($1, $2)`,
+      `
+      INSERT INTO manager_residencies (manager_id, residency_id)
+      VALUES ($1, $2)
+      `,
       [managerId, residency.id]
     );
 
+    // Create template WITH version
     const templateResult = await client.query(
-      `INSERT INTO residency_templates (residency_id)
-       VALUES ($1)
-       RETURNING id`,
+      `
+      INSERT INTO residency_templates (residency_id, version)
+      VALUES ($1, 1)
+      RETURNING id
+      `,
       [residency.id]
     );
 
@@ -169,6 +178,7 @@ router.post("/residencies", async (req, res) => {
 
     const templateId = templateResult.rows[0].id;
 
+    // Seed default template items
     const defaultItems = [
       ["Utilities", "Electricity Provider"],
       ["Emergency Contacts", "Security Contact"],
