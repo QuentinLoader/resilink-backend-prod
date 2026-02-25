@@ -1,8 +1,10 @@
+
+console.log("JWT payload:", req.user);
 import db from "../db.js";
 
 export default async function requireResidencyAccess(req, res, next) {
   const { residency_id } = req.params;
-  const { supabase_user_id } = req.user;
+  const supabase_user_id = req.user.sub;
 
   if (!residency_id) {
     return res.status(400).json({ error: "Missing residency_id" });

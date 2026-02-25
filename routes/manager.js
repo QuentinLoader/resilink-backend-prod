@@ -90,11 +90,16 @@ router.post("/residencies", async (req, res) => {
 
   try {
     const managerResult = await pool.query(
-      `SELECT id FROM managers WHERE supabase_user_id = $1`,
-      [req.user.sub]
-    );
+  `SELECT id FROM managers WHERE supabase_user_id = $1`,
+  [req.user.sub]
+);
 
-    const managerId = managerResult.rows[0].id;
+if (managerResult.rowCount === 0) {
+  return res.status(403).json({ error: "Manager profile not found. Complete registration first." });
+}
+
+const managerId = managerResult.rows[0].id;
+
     const accessCode = await generateUniqueAccessCode();
 
     const residencyResult = await pool.query(
