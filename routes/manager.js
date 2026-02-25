@@ -118,7 +118,70 @@ router.get("/residencies", async (req, res) => {
 });
 
 /* =====================================================
-   POST: Add Residency (Transactional + Fully Safe)
+   GET: Residency Template
+===================================================== */
+router.get("/residencies/:id/template", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const managerId = await ensureManager(req);
+
+    // Verify manager has access to residency
+    const accessCheck = await pool.query(
+      `
+      SELECT 1
+      FROM manager_residencies
+      WHERE manager_id = $1
+      AND residency_id = $2
+      `,
+      [managerId, id]
+    );
+
+    if (accessCheck.rowCount === 0) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    // Fetch template
+    const templateResult = await pool.query(
+      `
+      SELECT id, version
+      FROM residency_templates
+      WHERE residency_id = $1
+      `,
+      [id]
+    );
+
+    if (templateResult.rowCount === 0) {
+      return res.json({ template: null, items: [] });
+    }
+
+    const template = templateResult.rows[0];
+
+    // Fetch template items
+    const itemsResult = await pool.query(
+      `
+      SELECT id, category, label, content, sort_order
+      FROM residency_template_items
+      WHERE template_id = $1
+      ORDER BY sort_order ASC
+      `,
+      [template.id]
+    );
+
+    res.json({
+      template_id: template.id,
+      version: template.version,
+      items: itemsResult.rows
+    });
+
+  } catch (err) {
+    console.error("Error fetching template:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* =====================================================
+   POST: Add Residency (Transactional)
 ===================================================== */
 router.post("/residencies", async (req, res) => {
   const { residency_name, property_type } = req.body;
@@ -137,7 +200,6 @@ router.post("/residencies", async (req, res) => {
     const managerId = await ensureManager(req);
     const accessCode = await generateUniqueAccessCode();
 
-    // Insert residency
     const residencyResult = await client.query(
       `
       INSERT INTO residencies (name, property_type, access_code)
@@ -147,13 +209,8 @@ router.post("/residencies", async (req, res) => {
       [residency_name, property_type, accessCode]
     );
 
-    if (residencyResult.rowCount === 0) {
-      throw new Error("Residency insert failed");
-    }
-
     const residency = residencyResult.rows[0];
 
-    // Link manager
     await client.query(
       `
       INSERT INTO manager_residencies (manager_id, residency_id)
@@ -162,7 +219,6 @@ router.post("/residencies", async (req, res) => {
       [managerId, residency.id]
     );
 
-    // Create template WITH version
     const templateResult = await client.query(
       `
       INSERT INTO residency_templates (residency_id, version)
@@ -172,13 +228,8 @@ router.post("/residencies", async (req, res) => {
       [residency.id]
     );
 
-    if (templateResult.rowCount === 0) {
-      throw new Error("Template creation failed");
-    }
-
     const templateId = templateResult.rows[0].id;
 
-    // Seed default template items
     const defaultItems = [
       ["Utilities", "Electricity Provider"],
       ["Emergency Contacts", "Security Contact"],
