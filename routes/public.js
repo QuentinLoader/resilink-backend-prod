@@ -1,142 +1,82 @@
 import express from "express";
-import crypto from "crypto";
 import pool from "../db.js";
-import { authenticateUser } from "../middleware/auth.js";
 
 const router = express.Router();
 
-/* =====================================================
-   Helper: Generate Unique Access Code
-===================================================== */
-async function generateUniqueAccessCode() {
-  let accessCode;
-  let exists = true;
-
-  while (exists) {
-    accessCode = crypto.randomBytes(3).toString("hex").toUpperCase();
-    const check = await pool.query(
-      `SELECT 1 FROM residencies WHERE access_code = $1`,
-      [accessCode]
-    );
-    exists = check.rowCount > 0;
-  }
-
-  return accessCode;
-}
-
-/* =====================================================
-   POST: Register Manager
-===================================================== */
-router.post("/register-manager", authenticateUser, async (req, res) => {
-  try {
-    const { full_name, residency_name, property_type } = req.body;
-    const supabaseUserId = req.user.sub;
-    const email = req.user.email;
-
-    const managerResult = await pool.query(
-      `
-      INSERT INTO managers (supabase_user_id, full_name, email)
-      VALUES ($1, $2, $3)
-      RETURNING id
-      `,
-      [supabaseUserId, full_name, email]
-    );
-
-    const managerId = managerResult.rows[0].id;
-    const accessCode = await generateUniqueAccessCode();
-
-    const residencyResult = await pool.query(
-      `
-      INSERT INTO residencies (name, property_type, access_code)
-      VALUES ($1, $2, $3)
-      RETURNING id
-      `,
-      [residency_name, property_type, accessCode]
-    );
-
-    const residencyId = residencyResult.rows[0].id;
-
-    await pool.query(
-      `INSERT INTO manager_residencies (manager_id, residency_id)
-       VALUES ($1, $2)`,
-      [managerId, residencyId]
-    );
-
-    const templateResult = await pool.query(
-      `INSERT INTO residency_templates (residency_id)
-       VALUES ($1)
-       RETURNING id`,
-      [residencyId]
-    );
-
-    const templateId = templateResult.rows[0].id;
-
-    const defaultItems = [
-      ["Utilities", "Electricity Provider"],
-      ["Emergency Contacts", "Security Contact"],
-      ["Rules", "Quiet Hours"],
-      ["Amenities", "Pool Hours"],
-      ["Security", "Access Procedure"],
-      ["General Info", "Waste Collection"]
-    ];
-
-    for (let i = 0; i < defaultItems.length; i++) {
-      await pool.query(
-        `
-        INSERT INTO residency_template_items
-        (template_id, category, label, content, sort_order)
-        VALUES ($1, $2, $3, $4, $5)
-        `,
-        [templateId, defaultItems[i][0], defaultItems[i][1], "Enter details here.", i + 1]
-      );
-    }
-
-    res.json({ success: true, access_code: accessCode });
-
-  } catch (err) {
-    console.error("Register manager error:", err);
-    res.status(500).json({ error: "Registration failed" });
-  }
-});
-
-/* =====================================================
-   GET: Template by Access Code
-===================================================== */
-router.get("/template/:accessCode", async (req, res) => {
-  const { accessCode } = req.params;
+/**
+ * GET Public FAQs for a residency
+ * Optional search: ?q=keyword
+ *
+ * GET /api/public/residencies/:residencyId/faqs
+ * GET /api/public/residencies/:residencyId/faqs?q=parking
+ */
+router.get("/residencies/:residencyId/faqs", async (req, res) => {
+  const { residencyId } = req.params;
+  const { q } = req.query;
 
   try {
-    const result = await pool.query(
-      `
-      SELECT rt.id
-      FROM residencies r
-      JOIN residency_templates rt ON rt.residency_id = r.id
-      WHERE r.access_code = $1
-      `,
-      [accessCode]
-    );
+    // Strict UUID validation (safer than length check)
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Invalid access code" });
+    if (!residencyId || !uuidRegex.test(residencyId)) {
+      return res.status(400).json({ error: "Invalid residency ID" });
     }
 
-    const templateId = result.rows[0].id;
+    let query = `
+      SELECT 
+        c.name AS category,
+        f.id,
+        f.question,
+        f.answer
+      FROM residency_faqs f
+      JOIN categories c ON f.category_id = c.id
+      WHERE f.residency_id = $1
+    `;
 
-    const items = await pool.query(
-      `
-      SELECT category, label, content
-      FROM residency_template_items
-      WHERE template_id = $1
-      ORDER BY category, sort_order
-      `,
-      [templateId]
+    const params = [residencyId];
+
+    // Optional search support (MVP simple search)
+    if (q && q.trim() !== "") {
+      query += `
+        AND (
+          f.question ILIKE $2
+          OR f.answer ILIKE $2
+        )
+      `;
+      params.push(`%${q}%`);
+    }
+
+    query += `
+      ORDER BY c.name ASC, f.created_at ASC;
+    `;
+
+    const { rows } = await pool.query(query, params);
+
+    // Group results into array format (frontend-friendly)
+    const grouped = Object.values(
+      rows.reduce((acc, row) => {
+        if (!acc[row.category]) {
+          acc[row.category] = {
+            category: row.category,
+            faqs: [],
+          };
+        }
+
+        acc[row.category].faqs.push({
+          id: row.id,
+          question: row.question,
+          answer: row.answer,
+        });
+
+        return acc;
+      }, {})
     );
 
-    res.json(items.rows);
-
-  } catch (err) {
-    console.error("Error fetching public template:", err);
-    res.status(500).json({ error: "Server error" });
+    return res.json(grouped);
+  } catch (error) {
+    console.error("Error fetching public FAQs:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
