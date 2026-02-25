@@ -7,6 +7,29 @@ const router = express.Router();
 router.use(authenticateUser);
 
 /* =====================================================
+   Helper: Ensure Manager Exists (Auto-Provision)
+===================================================== */
+async function ensureManager(req) {
+  const result = await pool.query(
+    `SELECT id FROM managers WHERE supabase_user_id = $1`,
+    [req.user.sub]
+  );
+
+  if (result.rowCount > 0) {
+    return result.rows[0].id;
+  }
+
+  const insert = await pool.query(
+    `INSERT INTO managers (supabase_user_id, email)
+     VALUES ($1, $2)
+     RETURNING id`,
+    [req.user.sub, req.user.email]
+  );
+
+  return insert.rows[0].id;
+}
+
+/* =====================================================
    Helper: Generate Unique Access Code
 ===================================================== */
 async function generateUniqueAccessCode() {
@@ -32,6 +55,8 @@ async function generateUniqueAccessCode() {
 ===================================================== */
 router.get("/me", async (req, res) => {
   try {
+    const managerId = await ensureManager(req);
+
     const result = await pool.query(
       `
       SELECT 
@@ -40,13 +65,13 @@ router.get("/me", async (req, res) => {
         COUNT(mr.residency_id) AS residency_count
       FROM managers m
       LEFT JOIN manager_residencies mr ON mr.manager_id = m.id
-      WHERE m.supabase_user_id = $1
+      WHERE m.id = $1
       GROUP BY m.id
       `,
-      [req.user.sub]
+      [managerId]
     );
 
-    res.json(result.rows[0]);
+    res.json(result.rows[0] || {});
   } catch (err) {
     console.error("Error fetching manager profile:", err);
     res.status(500).json({ error: "Server error" });
@@ -58,17 +83,18 @@ router.get("/me", async (req, res) => {
 ===================================================== */
 router.get("/residencies", async (req, res) => {
   try {
+    const managerId = await ensureManager(req);
+
     const result = await pool.query(
       `
       SELECT r.id, r.name, r.created_at
       FROM manager_residencies mr
-      JOIN managers m ON m.id = mr.manager_id
       JOIN residencies r ON r.id = mr.residency_id
-      WHERE m.supabase_user_id = $1
+      WHERE mr.manager_id = $1
       AND r.is_active = true
       ORDER BY r.created_at DESC
       `,
-      [req.user.sub]
+      [managerId]
     );
 
     res.json(result.rows);
@@ -89,17 +115,7 @@ router.post("/residencies", async (req, res) => {
   }
 
   try {
-    const managerResult = await pool.query(
-  `SELECT id FROM managers WHERE supabase_user_id = $1`,
-  [req.user.sub]
-);
-
-if (managerResult.rowCount === 0) {
-  return res.status(403).json({ error: "Manager profile not found. Complete registration first." });
-}
-
-const managerId = managerResult.rows[0].id;
-
+    const managerId = await ensureManager(req);
     const accessCode = await generateUniqueAccessCode();
 
     const residencyResult = await pool.query(
@@ -164,21 +180,22 @@ router.patch("/residencies/:id", async (req, res) => {
   const { name } = req.body;
 
   try {
+    const managerId = await ensureManager(req);
+
     const result = await pool.query(
       `
       UPDATE residencies r
       SET name = $1, updated_at = now()
       FROM manager_residencies mr
-      JOIN managers m ON m.id = mr.manager_id
       WHERE r.id = mr.residency_id
       AND r.id = $2
-      AND m.supabase_user_id = $3
+      AND mr.manager_id = $3
       RETURNING r.*
       `,
-      [name, id, req.user.sub]
+      [name, id, managerId]
     );
 
-    res.json(result.rows[0]);
+    res.json(result.rows[0] || {});
   } catch (err) {
     console.error("Error renaming residency:", err);
     res.status(500).json({ error: "Server error" });
@@ -192,121 +209,23 @@ router.delete("/residencies/:id", async (req, res) => {
   const { id } = req.params;
 
   try {
+    const managerId = await ensureManager(req);
+
     await pool.query(
       `
       UPDATE residencies r
       SET is_active = false, updated_at = now()
       FROM manager_residencies mr
-      JOIN managers m ON m.id = mr.manager_id
       WHERE r.id = mr.residency_id
       AND r.id = $1
-      AND m.supabase_user_id = $2
+      AND mr.manager_id = $2
       `,
-      [id, req.user.sub]
+      [id, managerId]
     );
 
     res.json({ success: true });
   } catch (err) {
     console.error("Error deleting residency:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-/* =====================================================
-   GET: Maintenance
-===================================================== */
-router.get("/residencies/:residencyId/maintenance", async (req, res) => {
-  const { residencyId } = req.params;
-  const { status } = req.query;
-
-  try {
-    let query = `
-      SELECT 
-        m.id,
-        m.status,
-        m.title,
-        m.description,
-        m.created_at,
-        r.full_name AS resident_name,
-        r.unit_number
-      FROM maintenance_requests m
-      JOIN residents r ON m.resident_id = r.id
-      JOIN properties p ON r.property_id = p.id
-      WHERE p.residency_id = $1
-    `;
-
-    const values = [residencyId];
-
-    if (status) {
-      query += ` AND m.status = $2`;
-      values.push(status);
-    }
-
-    query += ` ORDER BY m.created_at DESC`;
-
-    const result = await pool.query(query, values);
-    res.json(result.rows);
-
-  } catch (err) {
-    console.error("Error fetching maintenance:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-/* =====================================================
-   GET: Residency Template
-===================================================== */
-router.get("/residencies/:residencyId/template", async (req, res) => {
-  const { residencyId } = req.params;
-
-  try {
-    // Ensure manager has access
-    const accessCheck = await pool.query(
-      `
-      SELECT 1
-      FROM manager_residencies mr
-      JOIN managers m ON m.id = mr.manager_id
-      WHERE m.supabase_user_id = $1
-      AND mr.residency_id = $2
-      `,
-      [req.user.sub, residencyId]
-    );
-
-    if (accessCheck.rowCount === 0) {
-      return res.status(403).json({ error: "Forbidden" });
-    }
-
-    const templateResult = await pool.query(
-      `SELECT id FROM residency_templates WHERE residency_id = $1`,
-      [residencyId]
-    );
-
-    if (templateResult.rowCount === 0) {
-      return res.json({});
-    }
-
-    const templateId = templateResult.rows[0].id;
-
-    const items = await pool.query(
-      `
-      SELECT id, category, label, content, sort_order
-      FROM residency_template_items
-      WHERE template_id = $1
-      ORDER BY category, sort_order
-      `,
-      [templateId]
-    );
-
-    const grouped = items.rows.reduce((acc, item) => {
-      if (!acc[item.category]) acc[item.category] = [];
-      acc[item.category].push(item);
-      return acc;
-    }, {});
-
-    res.json(grouped);
-
-  } catch (err) {
-    console.error("Error fetching template:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
