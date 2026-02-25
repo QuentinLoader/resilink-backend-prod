@@ -10,9 +10,16 @@ router.use(authenticateUser);
    Helper: Ensure Manager Exists (Auto-Provision)
 ===================================================== */
 async function ensureManager(req) {
+  if (!req.user || !req.user.sub) {
+    throw new Error("Invalid JWT payload");
+  }
+
+  const supabaseUserId = req.user.sub;
+  const email = req.user.email || "unknown@example.com";
+
   const result = await pool.query(
     `SELECT id FROM managers WHERE supabase_user_id = $1`,
-    [req.user.sub]
+    [supabaseUserId]
   );
 
   if (result.rowCount > 0) {
@@ -23,7 +30,7 @@ async function ensureManager(req) {
     `INSERT INTO managers (supabase_user_id, email)
      VALUES ($1, $2)
      RETURNING id`,
-    [req.user.sub, req.user.email]
+    [supabaseUserId, email]
   );
 
   return insert.rows[0].id;
@@ -105,7 +112,7 @@ router.get("/residencies", async (req, res) => {
 });
 
 /* =====================================================
-   POST: Add Residency
+   POST: Add Residency (Transactional)
 ===================================================== */
 router.post("/residencies", async (req, res) => {
   const { name, property_type } = req.body;
@@ -114,11 +121,15 @@ router.post("/residencies", async (req, res) => {
     return res.status(400).json({ error: "Name and property_type required" });
   }
 
+  const client = await pool.connect();
+
   try {
+    await client.query("BEGIN");
+
     const managerId = await ensureManager(req);
     const accessCode = await generateUniqueAccessCode();
 
-    const residencyResult = await pool.query(
+    const residencyResult = await client.query(
       `
       INSERT INTO residencies (name, property_type, access_code)
       VALUES ($1, $2, $3)
@@ -129,13 +140,13 @@ router.post("/residencies", async (req, res) => {
 
     const residency = residencyResult.rows[0];
 
-    await pool.query(
+    await client.query(
       `INSERT INTO manager_residencies (manager_id, residency_id)
        VALUES ($1, $2)`,
       [managerId, residency.id]
     );
 
-    const templateResult = await pool.query(
+    const templateResult = await client.query(
       `INSERT INTO residency_templates (residency_id)
        VALUES ($1)
        RETURNING id`,
@@ -154,21 +165,32 @@ router.post("/residencies", async (req, res) => {
     ];
 
     for (let i = 0; i < defaultItems.length; i++) {
-      await pool.query(
+      await client.query(
         `
         INSERT INTO residency_template_items
         (template_id, category, label, content, sort_order)
         VALUES ($1, $2, $3, $4, $5)
         `,
-        [templateId, defaultItems[i][0], defaultItems[i][1], "Enter details here.", i + 1]
+        [
+          templateId,
+          defaultItems[i][0],
+          defaultItems[i][1],
+          "Enter details here.",
+          i + 1
+        ]
       );
     }
+
+    await client.query("COMMIT");
 
     res.json({ residency, access_code: accessCode });
 
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("Error creating residency:", err);
     res.status(500).json({ error: "Server error" });
+  } finally {
+    client.release();
   }
 });
 
