@@ -33,6 +33,10 @@ async function ensureManager(req) {
     [supabaseUserId, email]
   );
 
+  if (insert.rowCount === 0) {
+    throw new Error("Failed to create manager profile");
+  }
+
   return insert.rows[0].id;
 }
 
@@ -112,13 +116,15 @@ router.get("/residencies", async (req, res) => {
 });
 
 /* =====================================================
-   POST: Add Residency (Transactional)
+   POST: Add Residency (Transactional + Fixed Payload)
 ===================================================== */
 router.post("/residencies", async (req, res) => {
-  const { name, property_type } = req.body;
+  const { residency_name, property_type } = req.body;
 
-  if (!name || !property_type) {
-    return res.status(400).json({ error: "Name and property_type required" });
+  if (!residency_name || !property_type) {
+    return res.status(400).json({
+      error: "residency_name and property_type required"
+    });
   }
 
   const client = await pool.connect();
@@ -133,10 +139,14 @@ router.post("/residencies", async (req, res) => {
       `
       INSERT INTO residencies (name, property_type, access_code)
       VALUES ($1, $2, $3)
-      RETURNING *
+      RETURNING id, name, property_type, access_code
       `,
-      [name, property_type, accessCode]
+      [residency_name, property_type, accessCode]
     );
+
+    if (residencyResult.rowCount === 0) {
+      throw new Error("Residency insert failed");
+    }
 
     const residency = residencyResult.rows[0];
 
@@ -152,6 +162,10 @@ router.post("/residencies", async (req, res) => {
        RETURNING id`,
       [residency.id]
     );
+
+    if (templateResult.rowCount === 0) {
+      throw new Error("Template creation failed");
+    }
 
     const templateId = templateResult.rows[0].id;
 
@@ -183,7 +197,11 @@ router.post("/residencies", async (req, res) => {
 
     await client.query("COMMIT");
 
-    res.json({ residency, access_code: accessCode });
+    res.json({
+      success: true,
+      residency,
+      access_code: accessCode
+    });
 
   } catch (err) {
     await client.query("ROLLBACK");
