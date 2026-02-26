@@ -5,6 +5,60 @@ import residencyAccess from "../middleware/residencyAccess.js";
 
 const router = express.Router();
 
+/* =========================================================
+   MAINTENANCE STATUS UPDATE (LOCKED CONTRACT)
+   ========================================================= */
+
+router.patch(
+  "/maintenance/:id/status",
+  authenticateUser,
+  async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const allowedStatuses = [
+      "pending",
+      "in_progress",
+      "completed",
+      "cancelled",
+    ];
+
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        error:
+          "Invalid status value. Allowed values: pending, in_progress, completed, cancelled",
+      });
+    }
+
+    try {
+      const { rowCount } = await pool.query(
+        `
+        UPDATE maintenance_requests
+        SET status = $1,
+            updated_at = NOW()
+        WHERE id = $2;
+        `,
+        [status, id]
+      );
+
+      if (rowCount === 0) {
+        return res
+          .status(404)
+          .json({ error: "Maintenance request not found" });
+      }
+
+      return res.json({ message: "Status updated successfully" });
+    } catch (error) {
+      console.error("Error updating maintenance status:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+/* =========================================================
+   FAQ ROUTES
+   ========================================================= */
+
 /**
  * GET All FAQs for a residency (Manager View)
  */
@@ -52,9 +106,9 @@ router.post(
     const { categoryId, question, answer } = req.body;
 
     if (!categoryId || !question || !answer) {
-      return res
-        .status(400)
-        .json({ error: "categoryId, question and answer are required" });
+      return res.status(400).json({
+        error: "categoryId, question and answer are required",
+      });
     }
 
     try {
