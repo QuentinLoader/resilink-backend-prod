@@ -10,7 +10,8 @@ const router = express.Router();
 ================================ */
 router.post("/register-manager", authenticateUser, async (req, res) => {
   const { residency_name, property_type } = req.body;
-  const managerId = req.user.id; // Supabase user ID
+
+  const supabaseUserId = req.user.id; // From JWT (payload.sub)
 
   if (!residency_name || !property_type) {
     return res.status(400).json({
@@ -23,35 +24,39 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // 1️⃣ Insert manager if not exists
-    await client.query(
+    // 1️⃣ Insert manager using supabase_user_id
+    const managerResult = await client.query(
       `
-      INSERT INTO managers (id)
+      INSERT INTO managers (supabase_user_id)
       VALUES ($1)
-      ON CONFLICT (id) DO NOTHING;
+      ON CONFLICT (supabase_user_id)
+      DO UPDATE SET supabase_user_id = EXCLUDED.supabase_user_id
+      RETURNING id;
       `,
-      [managerId]
+      [supabaseUserId]
     );
+
+    const managerDbId = managerResult.rows[0].id;
 
     // 2️⃣ Create residency
     const residencyResult = await client.query(
       `
-      INSERT INTO residencies (name)
-      VALUES ($1)
+      INSERT INTO residencies (name, property_type)
+      VALUES ($1, $2)
       RETURNING id;
       `,
-      [residency_name]
+      [residency_name, property_type]
     );
 
     const residencyId = residencyResult.rows[0].id;
 
-    // 3️⃣ Link manager to residency
+    // 3️⃣ Link manager to residency (using internal manager id)
     await client.query(
       `
       INSERT INTO manager_residencies (manager_id, residency_id)
       VALUES ($1, $2);
       `,
-      [managerId, residencyId]
+      [managerDbId, residencyId]
     );
 
     await client.query("COMMIT");
