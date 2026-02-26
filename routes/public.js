@@ -1,21 +1,83 @@
 import express from "express";
 import pool from "../db.js";
+import { authenticateUser } from "../middleware/auth.js";
 
 const router = express.Router();
 
-/**
- * GET Public FAQs for a residency
- * Optional search: ?q=keyword
- *
- * GET /api/public/residencies/:residencyId/faqs
- * GET /api/public/residencies/:residencyId/faqs?q=parking
- */
+/* ===============================
+   REGISTER MANAGER + RESIDENCY
+   POST /api/public/register-manager
+================================ */
+router.post("/register-manager", authenticateUser, async (req, res) => {
+  const { residency_name, property_type } = req.body;
+  const managerId = req.user.id; // Supabase user ID
+
+  if (!residency_name || !property_type) {
+    return res.status(400).json({
+      error: "Residency name and property type are required",
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // 1️⃣ Insert manager if not exists
+    await client.query(
+      `
+      INSERT INTO managers (id)
+      VALUES ($1)
+      ON CONFLICT (id) DO NOTHING;
+      `,
+      [managerId]
+    );
+
+    // 2️⃣ Create residency
+    const residencyResult = await client.query(
+      `
+      INSERT INTO residencies (name)
+      VALUES ($1)
+      RETURNING id;
+      `,
+      [residency_name]
+    );
+
+    const residencyId = residencyResult.rows[0].id;
+
+    // 3️⃣ Link manager to residency
+    await client.query(
+      `
+      INSERT INTO manager_residencies (manager_id, residency_id)
+      VALUES ($1, $2);
+      `,
+      [managerId, residencyId]
+    );
+
+    await client.query("COMMIT");
+
+    return res.status(201).json({
+      message: "Manager registered successfully",
+      residency_id: residencyId,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Register manager error:", error);
+    return res.status(500).json({ error: "Registration failed" });
+  } finally {
+    client.release();
+  }
+});
+
+/* ===============================
+   PUBLIC FAQ ENDPOINT
+================================ */
+
 router.get("/residencies/:residencyId/faqs", async (req, res) => {
   const { residencyId } = req.params;
   const { q } = req.query;
 
   try {
-    // Strict UUID validation (safer than length check)
     const uuidRegex =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -36,7 +98,6 @@ router.get("/residencies/:residencyId/faqs", async (req, res) => {
 
     const params = [residencyId];
 
-    // Optional search support (MVP simple search)
     if (q && q.trim() !== "") {
       query += `
         AND (
@@ -53,7 +114,6 @@ router.get("/residencies/:residencyId/faqs", async (req, res) => {
 
     const { rows } = await pool.query(query, params);
 
-    // Group results into array format (frontend-friendly)
     const grouped = Object.values(
       rows.reduce((acc, row) => {
         if (!acc[row.category]) {
