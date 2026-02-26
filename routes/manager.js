@@ -10,7 +10,7 @@ const router = express.Router();
  */
 router.get(
   "/residencies/:residencyId/faqs",
-  auth,
+  authenticateUser,
   residencyAccess,
   async (req, res) => {
     const { residencyId } = req.params;
@@ -45,7 +45,7 @@ router.get(
  */
 router.post(
   "/residencies/:residencyId/faqs",
-  auth,
+  authenticateUser,
   residencyAccess,
   async (req, res) => {
     const { residencyId } = req.params;
@@ -85,7 +85,7 @@ router.post(
  */
 router.put(
   "/faqs/:faqId",
-  auth,
+  authenticateUser,
   async (req, res) => {
     const { faqId } = req.params;
     const { categoryId, question, answer } = req.body;
@@ -127,7 +127,7 @@ router.put(
  */
 router.delete(
   "/faqs/:faqId",
-  auth,
+  authenticateUser,
   async (req, res) => {
     const { faqId } = req.params;
 
