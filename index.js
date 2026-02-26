@@ -8,7 +8,7 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use("/api/manager/maintenance", managerMaintenanceRoutes);
+app.use("/api/manager", managerMaintenanceRoutes);
 
 // Health check
 app.get("/api/health", (_, res) => {
