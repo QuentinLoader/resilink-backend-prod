@@ -6,16 +6,22 @@ const router = express.Router();
 
 /* ===============================
    REGISTER MANAGER + RESIDENCY
-   POST /api/public/register-manager
 ================================ */
 router.post("/register-manager", authenticateUser, async (req, res) => {
   const { residency_name, property_type } = req.body;
 
-  const supabaseUserId = req.user.id; // From JWT (payload.sub)
+  const supabaseUserId = req.user.id;
+  const email = req.user.email;
 
   if (!residency_name || !property_type) {
     return res.status(400).json({
       error: "Residency name and property type are required",
+    });
+  }
+
+  if (!email) {
+    return res.status(400).json({
+      error: "User email missing from token",
     });
   }
 
@@ -24,16 +30,16 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // 1️⃣ Insert manager using supabase_user_id
+    // 1️⃣ Insert manager properly (including email)
     const managerResult = await client.query(
       `
-      INSERT INTO managers (supabase_user_id)
-      VALUES ($1)
+      INSERT INTO managers (supabase_user_id, email)
+      VALUES ($1, $2)
       ON CONFLICT (supabase_user_id)
-      DO UPDATE SET supabase_user_id = EXCLUDED.supabase_user_id
+      DO UPDATE SET email = EXCLUDED.email
       RETURNING id;
       `,
-      [supabaseUserId]
+      [supabaseUserId, email]
     );
 
     const managerDbId = managerResult.rows[0].id;
@@ -50,7 +56,7 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
 
     const residencyId = residencyResult.rows[0].id;
 
-    // 3️⃣ Link manager to residency (using internal manager id)
+    // 3️⃣ Link manager to residency
     await client.query(
       `
       INSERT INTO manager_residencies (manager_id, residency_id)
@@ -77,7 +83,6 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
 /* ===============================
    PUBLIC FAQ ENDPOINT
 ================================ */
-
 router.get("/residencies/:residencyId/faqs", async (req, res) => {
   const { residencyId } = req.params;
   const { q } = req.query;
