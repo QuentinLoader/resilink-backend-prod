@@ -2,7 +2,6 @@ import { jwtVerify, createRemoteJWKSet } from "jose";
 
 const SUPABASE_PROJECT_URL = "https://uxygywxiwkkaokbofvob.supabase.co";
 
-// ✅ Correct JWKS endpoint
 const JWKS = createRemoteJWKSet(
   new URL(`${SUPABASE_PROJECT_URL}/auth/v1/.well-known/jwks.json`)
 );
@@ -19,7 +18,12 @@ export async function authenticateUser(req, res, next) {
 
     const { payload } = await jwtVerify(token, JWKS);
 
-    req.user = payload;
+    // 🔥 CRITICAL FIX: Map Supabase "sub" to internal id
+    req.user = {
+      id: payload.sub,          // Supabase user UUID
+      email: payload.email,
+      role: payload.role || null
+    };
 
     next();
   } catch (err) {
