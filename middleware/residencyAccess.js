@@ -1,34 +1,33 @@
+import pool from "../db.js";
 
-import db from "../db.js";
+export default async function residencyAccess(req, res, next) {
+  const { residencyId } = req.params;
 
-export default async function requireResidencyAccess(req, res, next) {
-  const { residency_id } = req.params;
-  const supabase_user_id = req.user.sub;
-
-  if (!residency_id) {
-    return res.status(400).json({ error: "Missing residency_id" });
+  if (!residencyId) {
+    return res.status(400).json({ error: "Missing residencyId" });
   }
 
   try {
-    const result = await db.query(
+    const managerSupabaseId = req.user.sub;
+
+    const { rows } = await pool.query(
       `
       SELECT 1
-      FROM managers m
-      JOIN manager_residencies mr
-        ON mr.manager_id = m.id
-      WHERE m.supabase_user_id = $1
-      AND mr.residency_id = $2
+      FROM manager_residencies
+      WHERE manager_id = $1
+      AND residency_id = $2
+      LIMIT 1;
       `,
-      [supabase_user_id, residency_id]
+      [managerSupabaseId, residencyId]
     );
 
-    if (result.rowCount === 0) {
-      return res.status(403).json({ error: "Forbidden" });
+    if (rows.length === 0) {
+      return res.status(403).json({ error: "Access denied" });
     }
 
     next();
   } catch (error) {
     console.error("Residency access check failed:", error);
-    return res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: "Internal server error" });
   }
 }
