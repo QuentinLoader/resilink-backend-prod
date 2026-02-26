@@ -1,5 +1,4 @@
 
-console.log("JWT payload:", req.user);
 import db from "../db.js";
 
 export default async function requireResidencyAccess(req, res, next) {
