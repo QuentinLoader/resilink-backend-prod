@@ -1,6 +1,6 @@
 import express from "express";
 import pool from "../db.js";
-import auth from "../middleware/auth.js";
+import { authenticateUser } from "../middleware/auth.js";
 import residencyAccess from "../middleware/residencyAccess.js";
 
 const router = express.Router();
