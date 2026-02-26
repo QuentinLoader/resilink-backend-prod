@@ -8,9 +8,27 @@ export default async function residencyAccess(req, res, next) {
   }
 
   try {
-    const managerSupabaseId = req.user.sub;
+    const supabaseUserId = req.user.sub;
 
-    const { rows } = await pool.query(
+    // Step 1: Get internal manager ID
+    const managerResult = await pool.query(
+      `
+      SELECT id
+      FROM managers
+      WHERE supabase_user_id = $1
+      LIMIT 1;
+      `,
+      [supabaseUserId]
+    );
+
+    if (managerResult.rows.length === 0) {
+      return res.status(403).json({ error: "Manager not found" });
+    }
+
+    const managerId = managerResult.rows[0].id;
+
+    // Step 2: Check residency access
+    const accessResult = await pool.query(
       `
       SELECT 1
       FROM manager_residencies
@@ -18,10 +36,10 @@ export default async function residencyAccess(req, res, next) {
       AND residency_id = $2
       LIMIT 1;
       `,
-      [managerSupabaseId, residencyId]
+      [managerId, residencyId]
     );
 
-    if (rows.length === 0) {
+    if (accessResult.rows.length === 0) {
       return res.status(403).json({ error: "Access denied" });
     }
 
