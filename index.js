@@ -2,11 +2,13 @@ import express from "express";
 import cors from "cors";
 import publicRoutes from "./routes/public.js";
 import managerRoutes from "./routes/manager.js";
+import managerMaintenanceRoutes from "./routes/manager.maintenance.js";
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.use("/api/manager/maintenance", managerMaintenanceRoutes);
 
 // Health check
 app.get("/api/health", (_, res) => {
