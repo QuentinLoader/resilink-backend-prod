@@ -1,8 +1,17 @@
 import express from "express";
 import pool from "../db.js";
 import { authenticateUser } from "../middleware/auth.js";
+import crypto from "crypto";
 
 const router = express.Router();
+
+/* ===============================
+   Helper: Generate Residency Access Code
+   (Unified secure generator)
+================================ */
+function generateAccessCode() {
+  return "R-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+}
 
 /* ===============================
    Helper: Get internal manager ID
@@ -78,17 +87,34 @@ router.post("/residencies", authenticateUser, async (req, res) => {
       return res.status(404).json({ error: "Manager not found" });
     }
 
-    // Generate simple access code (improve later in Access Code phase)
-    const accessCode = "R-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+    // Generate secure access code with rare collision retry
+    let accessCode;
+    let residencyResult;
 
-    const residencyResult = await client.query(
-      `
-      INSERT INTO residencies (name, property_type, access_code)
-      VALUES ($1, $2, $3)
-      RETURNING id, name, property_type, access_code, created_at;
-      `,
-      [name, property_type, accessCode]
-    );
+    for (let attempt = 0; attempt < 3; attempt++) {
+      accessCode = generateAccessCode();
+
+      try {
+        residencyResult = await client.query(
+          `
+          INSERT INTO residencies (name, property_type, access_code)
+          VALUES ($1, $2, $3)
+          RETURNING id, name, property_type, access_code, created_at;
+          `,
+          [name, property_type, accessCode]
+        );
+        break; // success
+      } catch (err) {
+        // Retry only on unique violation
+        if (err.code !== "23505") {
+          throw err;
+        }
+      }
+    }
+
+    if (!residencyResult) {
+      throw new Error("Failed to generate unique access code");
+    }
 
     const residency = residencyResult.rows[0];
 
