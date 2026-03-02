@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { enforceSafeMode } from "./middleware/safeMode.js";
 import publicRoutes from "./routes/public.js";
 import managerRoutes from "./routes/manager.js";
 import managerMaintenanceRoutes from "./routes/manager.maintenance.js";
@@ -8,9 +9,8 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use("/api/manager", managerMaintenanceRoutes);
 
-// Health check
+// Health & root first (never blocked)
 app.get("/api/health", (_, res) => {
   res.json({ status: "OK" });
 });
@@ -19,8 +19,12 @@ app.get("/", (_, res) => {
   res.send("ResiLink API OK");
 });
 
+// 🔒 Safe Mode applies to all API routes below
+app.use(enforceSafeMode);
+
 // Mount routes
 app.use("/api/public", publicRoutes);
+app.use("/api/manager", managerMaintenanceRoutes);
 app.use("/api/manager", managerRoutes);
 
 const port = process.env.PORT || 3000;
