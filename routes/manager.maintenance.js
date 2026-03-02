@@ -1,6 +1,7 @@
 import express from "express";
 import pool from "../db.js";
 import { authenticateUser } from "../middleware/auth.js";
+import { enforceManagerResidencyParam } from "../middleware/residencyScope.js";
 
 const router = express.Router();
 
@@ -34,6 +35,7 @@ async function getManagerDbId(supabaseUserId) {
 router.get("/", authenticateUser, async (req, res) => {
   try {
     const managerDbId = await getManagerDbId(req.user.id);
+
     if (!managerDbId) {
       return res.status(404).json({ error: "Manager not found" });
     }
@@ -81,14 +83,10 @@ router.get("/", authenticateUser, async (req, res) => {
 router.get(
   "/residencies/:residencyId/maintenance",
   authenticateUser,
+  enforceManagerResidencyParam,
   async (req, res) => {
     try {
-      const { residencyId } = req.params;
-
-      const managerDbId = await getManagerDbId(req.user.id);
-      if (!managerDbId) {
-        return res.status(404).json({ error: "Manager not found" });
-      }
+      const { managerDbId, residencyId } = req;
 
       const { rows } = await pool.query(
         `
@@ -102,15 +100,12 @@ router.get(
           r.full_name AS resident_name,
           r.unit_number
         FROM maintenance_requests m
-        JOIN manager_residencies mr
-          ON mr.residency_id = m.residency_id
         LEFT JOIN residents r
           ON r.id = m.resident_id
-        WHERE mr.manager_id = $1
-          AND m.residency_id = $2
+        WHERE m.residency_id = $1
         ORDER BY m.created_at DESC;
         `,
-        [managerDbId, residencyId]
+        [residencyId]
       );
 
       res.json(rows);
@@ -128,6 +123,7 @@ router.get(
 router.put("/:id/status", authenticateUser, async (req, res) => {
   try {
     const managerDbId = await getManagerDbId(req.user.id);
+
     if (!managerDbId) {
       return res.status(404).json({ error: "Manager not found" });
     }
