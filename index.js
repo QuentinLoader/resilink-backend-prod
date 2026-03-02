@@ -4,11 +4,13 @@ import { enforceSafeMode } from "./middleware/safeMode.js";
 import publicRoutes from "./routes/public.js";
 import managerRoutes from "./routes/manager.js";
 import managerMaintenanceRoutes from "./routes/manager.maintenance.js";
+import whatsappRoutes from "./routes/whatsapp.js";
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.use("/api/whatsapp", whatsappRoutes);
 
 // Health & root first (never blocked)
 app.get("/api/health", (_, res) => {
