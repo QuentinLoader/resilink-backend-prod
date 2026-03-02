@@ -13,9 +13,12 @@ export async function enforceManagerResidencyParam(req, res, next) {
       return res.status(400).json({ error: "Missing residencyId" });
     }
 
-    // Get internal manager id
+    // 1️⃣ Get internal manager ID
     const managerResult = await pool.query(
-      `SELECT id FROM managers WHERE supabase_user_id = $1 LIMIT 1`,
+      `SELECT id, subscription_status 
+       FROM managers 
+       WHERE supabase_user_id = $1 
+       LIMIT 1`,
       [req.user.id]
     );
 
@@ -23,9 +26,17 @@ export async function enforceManagerResidencyParam(req, res, next) {
       return res.status(403).json({ error: "Manager not found" });
     }
 
-    const managerId = managerResult.rows[0].id;
+    const manager = managerResult.rows[0];
+    const managerId = manager.id;
 
-    // Verify manager linked to residency
+    // 2️⃣ Enforce manager subscription status
+    if (manager.subscription_status !== "active") {
+      return res.status(403).json({
+        error: "Your subscription is inactive.",
+      });
+    }
+
+    // 3️⃣ Check manager linked to residency
     const accessResult = await pool.query(
       `
       SELECT 1
@@ -41,7 +52,22 @@ export async function enforceManagerResidencyParam(req, res, next) {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    // Attach for downstream use
+    // 4️⃣ Check residency is active
+    const activeCheck = await pool.query(
+      `SELECT is_active 
+       FROM residencies 
+       WHERE id = $1 
+       LIMIT 1`,
+      [residencyId]
+    );
+
+    if (!activeCheck.rows[0]?.is_active) {
+      return res.status(403).json({
+        error: "This residency is currently inactive.",
+      });
+    }
+
+    // Attach to request
     req.managerDbId = managerId;
     req.residencyId = residencyId;
 
