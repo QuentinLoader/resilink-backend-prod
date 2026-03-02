@@ -1,107 +1,115 @@
+import express from "express";
+import pool from "../db.js";
+import { authenticateUser } from "../middleware/auth.js";
+
+const router = express.Router();
+
 /* ===============================
-   UPDATE MAINTENANCE STATUS
-   PUT /api/manager/maintenance/:id/status
+   Helper: Get internal manager ID
 ================================ */
-router.put(
-  "/maintenance/:id/status",
-  authenticateUser,
-  enforceSafeMode,
-  async (req, res) => {
-    const { status: newStatus } = req.body;
+async function getManagerDbId(supabaseUserId) {
+  const result = await pool.query(
+    `SELECT id FROM managers WHERE supabase_user_id = $1 LIMIT 1`,
+    [supabaseUserId]
+  );
 
-    if (!newStatus) {
-      return res.status(400).json({ error: "New status is required" });
+  if (result.rows.length === 0) return null;
+  return result.rows[0].id;
+}
+
+/* ===============================
+   GET MANAGER RESIDENCIES
+   GET /api/manager/residencies
+================================ */
+router.get("/residencies", authenticateUser, async (req, res) => {
+  try {
+    const managerDbId = await getManagerDbId(req.user.id);
+
+    if (!managerDbId) {
+      return res.status(404).json({ error: "Manager not found" });
     }
 
-    const allowedTransitions = {
-      OPEN: ["IN_PROGRESS"],
-      IN_PROGRESS: ["CLOSED"],
-      CLOSED: [],
-    };
+    const { rows } = await pool.query(
+      `
+      SELECT 
+        r.id,
+        r.name,
+        r.property_type,
+        r.access_code,
+        r.created_at
+      FROM residencies r
+      JOIN manager_residencies mr
+        ON mr.residency_id = r.id
+      WHERE mr.manager_id = $1
+      ORDER BY r.created_at DESC;
+      `,
+      [managerDbId]
+    );
 
-    const client = await pool.connect();
-
-    try {
-      await client.query("BEGIN");
-
-      const managerDbId = await getManagerDbId(req.user.id);
-      if (!managerDbId) {
-        await client.query("ROLLBACK");
-        return res.status(404).json({ error: "Manager not found" });
-      }
-
-      // 🔐 Get manager's residency
-      const residencyResult = await client.query(
-        `
-        SELECT residency_id
-        FROM manager_residencies
-        WHERE manager_id = $1
-        LIMIT 1;
-        `,
-        [managerDbId]
-      );
-
-      if (residencyResult.rows.length === 0) {
-        await client.query("ROLLBACK");
-        return res.status(403).json({ error: "No residency access" });
-      }
-
-      const managerResidencyId = residencyResult.rows[0].residency_id;
-
-      // 🔎 Fetch existing maintenance request
-      const maintenanceResult = await client.query(
-        `
-        SELECT id, status, residency_id
-        FROM maintenance_requests
-        WHERE id = $1
-        LIMIT 1;
-        `,
-        [req.params.id]
-      );
-
-      if (maintenanceResult.rows.length === 0) {
-        await client.query("ROLLBACK");
-        return res.status(404).json({ error: "Maintenance request not found" });
-      }
-
-      const maintenance = maintenanceResult.rows[0];
-
-      // 🔒 Residency isolation check
-      if (maintenance.residency_id !== managerResidencyId) {
-        await client.query("ROLLBACK");
-        return res.status(403).json({ error: "Forbidden" });
-      }
-
-      const currentStatus = maintenance.status;
-
-      // 🔒 Validate allowed transition
-      if (!allowedTransitions[currentStatus]?.includes(newStatus)) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({
-          error: `Invalid status transition: ${currentStatus} → ${newStatus}`,
-        });
-      }
-
-      // ✅ Perform safe update
-      await client.query(
-        `
-        UPDATE maintenance_requests
-        SET status = $1,
-            updated_at = NOW()
-        WHERE id = $2;
-        `,
-        [newStatus, req.params.id]
-      );
-
-      await client.query("COMMIT");
-
-      res.json({ success: true });
-    } catch (error) {
-      await client.query("ROLLBACK");
-      console.error("Update maintenance status error:", error);
-      res.status(500).json({ error: "Failed to update status" });
-    } finally {
-      client.release();
-    }
+    res.json(rows);
+  } catch (error) {
+    console.error("Get residencies error:", error);
+    res.status(500).json({ error: "Failed to fetch residencies" });
   }
-);
+});
+
+/* ===============================
+   CREATE NEW RESIDENCY
+   POST /api/manager/residencies
+================================ */
+router.post("/residencies", authenticateUser, async (req, res) => {
+  const { name, property_type } = req.body;
+
+  if (!name || !property_type) {
+    return res.status(400).json({
+      error: "Name and property type are required",
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const managerDbId = await getManagerDbId(req.user.id);
+
+    if (!managerDbId) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Manager not found" });
+    }
+
+    // Generate simple access code (improve later in Access Code phase)
+    const accessCode = "R-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    const residencyResult = await client.query(
+      `
+      INSERT INTO residencies (name, property_type, access_code)
+      VALUES ($1, $2, $3)
+      RETURNING id, name, property_type, access_code, created_at;
+      `,
+      [name, property_type, accessCode]
+    );
+
+    const residency = residencyResult.rows[0];
+
+    await client.query(
+      `
+      INSERT INTO manager_residencies (manager_id, residency_id)
+      VALUES ($1, $2);
+      `,
+      [managerDbId, residency.id]
+    );
+
+    await client.query("COMMIT");
+
+    res.status(201).json(residency);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Create residency error:", error);
+    res.status(500).json({ error: "Failed to create residency" });
+  } finally {
+    client.release();
+  }
+});
+
+export default router;
