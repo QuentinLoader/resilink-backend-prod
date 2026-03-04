@@ -3,11 +3,11 @@ import { jwtVerify, createRemoteJWKSet } from "jose";
 const SUPABASE_PROJECT_URL = "https://uxygywxiwkkaokbofvob.supabase.co";
 
 /* =====================================================
-   SUPABASE JWKS
+   SUPABASE JWKS (PUBLIC ENDPOINT)
 ===================================================== */
 
 const JWKS = createRemoteJWKSet(
-  new URL(`${SUPABASE_PROJECT_URL}/auth/v1/keys`)
+  new URL(`${SUPABASE_PROJECT_URL}/auth/v1/.well-known/jwks.json`)
 );
 
 /* =====================================================
