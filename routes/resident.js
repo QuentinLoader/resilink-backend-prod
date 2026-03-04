@@ -58,10 +58,10 @@ router.get("/:accessCode/info", async (req, res) => {
 });
 
 
-/* =====================================================
+/* ======================================
    GET RESIDENT KNOWLEDGE TEMPLATE
    GET /api/resident/:accessCode/template
-===================================================== */
+====================================== */
 
 router.get("/:accessCode/template", async (req, res) => {
   try {
@@ -84,7 +84,7 @@ router.get("/:accessCode/template", async (req, res) => {
         content
       FROM template_items
       WHERE residency_id = $1
-      ORDER BY section ASC, created_at ASC
+      ORDER BY section
       `,
       [residency.id]
     );
