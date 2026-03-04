@@ -33,6 +33,7 @@ async function getResidencyFromAccessCode(accessCode) {
 
 router.get("/:accessCode/info", async (req, res) => {
   try {
+
     const { accessCode } = req.params;
 
     const residency = await getResidencyFromAccessCode(accessCode);
@@ -50,10 +51,13 @@ router.get("/:accessCode/info", async (req, res) => {
     });
 
   } catch (error) {
+
     console.error("Resident info error:", error);
+
     res.status(500).json({
       error: "Server error"
     });
+
   }
 });
 
@@ -63,7 +67,9 @@ router.get("/:accessCode/info", async (req, res) => {
 ===================================================== */
 
 router.get("/:accessCode/template", async (req, res) => {
+
   try {
+
     const { accessCode } = req.params;
 
     const residency = await getResidencyFromAccessCode(accessCode);
@@ -94,11 +100,15 @@ router.get("/:accessCode/template", async (req, res) => {
     });
 
   } catch (error) {
+
     console.error("Template load error:", error);
+
     res.status(500).json({
       error: "Server error"
     });
+
   }
+
 });
 
 /* =====================================================
@@ -202,10 +212,6 @@ router.post("/:accessCode/maintenance", async (req, res) => {
 
     const requestId = insert.rows[0].id;
 
-    /* -----------------------------------------
-       URGENT REQUEST HANDLING
-    ----------------------------------------- */
-
     if (priority === "urgent") {
 
       return res.json({
@@ -216,10 +222,6 @@ router.post("/:accessCode/maintenance", async (req, res) => {
       });
 
     }
-
-    /* -----------------------------------------
-       SUGGEST NEXT AVAILABLE SLOT
-    ----------------------------------------- */
 
     const suggestedSlot = await getNextAvailableSlot(residency.id);
 
@@ -259,17 +261,25 @@ router.put("/maintenance/:id/confirm", async (req, res) => {
       });
     }
 
-    await pool.query(
+    const result = await pool.query(
       `
       UPDATE maintenance_requests
       SET
         scheduled_date = $1,
         scheduled_time = $2,
-        schedule_status = 'confirmed'
+        schedule_status = 'confirmed',
+        status = 'scheduled'
       WHERE id = $3
+      RETURNING id
       `,
       [scheduled_date, scheduled_time, id]
     );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: "Maintenance request not found"
+      });
+    }
 
     res.json({
       success: true
