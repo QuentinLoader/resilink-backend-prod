@@ -240,3 +240,49 @@ router.post("/:accessCode/maintenance", async (req, res) => {
   }
 
 });
+
+/* =====================================================
+   RESIDENT CONFIRM MAINTENANCE SLOT
+   PUT /api/resident/maintenance/:id/confirm
+===================================================== */
+
+router.put("/maintenance/:id/confirm", async (req, res) => {
+
+  try {
+
+    const { id } = req.params;
+    const { scheduled_date, scheduled_time } = req.body;
+
+    if (!scheduled_date || !scheduled_time) {
+      return res.status(400).json({
+        error: "Missing scheduling information"
+      });
+    }
+
+    await pool.query(
+      `
+      UPDATE maintenance_requests
+      SET
+        scheduled_date = $1,
+        scheduled_time = $2,
+        schedule_status = 'confirmed'
+      WHERE id = $3
+      `,
+      [scheduled_date, scheduled_time, id]
+    );
+
+    res.json({
+      success: true
+    });
+
+  } catch (error) {
+
+    console.error("Resident confirm schedule error:", error);
+
+    res.status(500).json({
+      error: "Scheduling failed"
+    });
+
+  }
+
+});
