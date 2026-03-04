@@ -138,4 +138,58 @@ router.post("/residencies", authenticateUser, async (req, res) => {
   }
 });
 
+/* ======================================
+   SCHEDULE MAINTENANCE VISIT
+   PUT /api/manager/maintenance/:id/schedule
+====================================== */
+
+router.put(
+  "/maintenance/:id/schedule",
+  authenticateUser,
+  async (req, res) => {
+    try {
+
+      const { id } = req.params;
+
+      const {
+        scheduled_date,
+        scheduled_time,
+        schedule_notes
+      } = req.body;
+
+      if (!scheduled_date || !scheduled_time) {
+        return res.status(400).json({
+          error: "Date and time required"
+        });
+      }
+
+      await pool.query(
+        `
+        UPDATE maintenance_requests
+        SET
+          scheduled_date = $1,
+          scheduled_time = $2,
+          schedule_notes = $3,
+          schedule_status = 'proposed'
+        WHERE id = $4
+        `,
+        [
+          scheduled_date,
+          scheduled_time,
+          schedule_notes || null,
+          id
+        ]
+      );
+
+      res.json({
+        success: true
+      });
+
+    } catch (error) {
+      console.error("Schedule error:", error);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+
 export default router;
