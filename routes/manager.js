@@ -165,7 +165,10 @@ router.get(
           resident_phone,
           preferred_date,
           preferred_time,
-          created_at
+          created_at,
+
+          EXTRACT(EPOCH FROM (NOW() - created_at)) / 3600 AS job_age_hours
+
         FROM maintenance_requests
         WHERE residency_id = $1
         ORDER BY created_at DESC
