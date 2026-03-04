@@ -5,7 +5,6 @@ export const router = express.Router();
 
 /* =====================================================
    RESOLVE RESIDENCY FROM ACCESS CODE
-   Internal helper
 ===================================================== */
 
 async function getResidencyFromAccessCode(accessCode) {
@@ -57,11 +56,10 @@ router.get("/:accessCode/info", async (req, res) => {
   }
 });
 
-
-/* ======================================
+/* =====================================================
    GET RESIDENT KNOWLEDGE TEMPLATE
    GET /api/resident/:accessCode/template
-====================================== */
+===================================================== */
 
 router.get("/:accessCode/template", async (req, res) => {
   try {
@@ -102,7 +100,6 @@ router.get("/:accessCode/template", async (req, res) => {
   }
 });
 
-
 /* =====================================================
    CREATE MAINTENANCE REQUEST
    POST /api/resident/:accessCode/maintenance
@@ -134,45 +131,35 @@ router.post("/:accessCode/maintenance", async (req, res) => {
     }
 
     /* -----------------------------------------
-       Generate reference number
+       Convert category + unit into title
     ----------------------------------------- */
 
-    const referenceNumber =
-      "MR-" +
-      Math.floor(100000 + Math.random() * 900000);
-
-    /* -----------------------------------------
-       Insert maintenance request
-    ----------------------------------------- */
+    const title = `${category} - Unit ${unit_number}`;
 
     const insert = await pool.query(
       `
       INSERT INTO maintenance_requests
       (
         residency_id,
-        category,
+        title,
         description,
-        unit_number,
         priority,
-        status,
-        reference_number
+        status
       )
-      VALUES ($1,$2,$3,$4,$5,'pending',$6)
-      RETURNING id, reference_number
+      VALUES ($1,$2,$3,$4,'pending')
+      RETURNING id
       `,
       [
         residency.id,
-        category,
+        title,
         description,
-        unit_number,
-        priority || "normal",
-        referenceNumber
+        priority || "normal"
       ]
     );
 
     res.json({
       success: true,
-      reference_number: insert.rows[0].reference_number
+      request_id: insert.rows[0].id
     });
 
   } catch (error) {
