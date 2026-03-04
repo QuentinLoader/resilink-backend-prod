@@ -16,24 +16,25 @@ const JWKS = createRemoteJWKSet(
 
 export async function authenticateUser(req, res, next) {
   try {
+
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Missing token" });
+      return res.status(401).json({
+        error: "Missing authorization header"
+      });
     }
 
     const token = authHeader.split(" ")[1];
 
-    const { payload } = await jwtVerify(token, JWKS, {
-      algorithms: ["RS256"]
-    });
+    const { payload } = await jwtVerify(token, JWKS);
 
     /* -----------------------------------------
-       Map Supabase payload
+       Map Supabase user
     ----------------------------------------- */
 
     req.user = {
-      id: payload.sub,      // Supabase user UUID
+      id: payload.sub,
       email: payload.email,
       role: payload.role || null
     };
