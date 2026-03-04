@@ -1,6 +1,5 @@
 import express from "express";
 import pool from "../config/db.js";
-import { getNextAvailableSlot } from "../services/scheduling.service.js";
 
 export const router = express.Router();
 
@@ -33,7 +32,6 @@ async function getResidencyFromAccessCode(accessCode) {
 
 router.get("/:accessCode/info", async (req, res) => {
   try {
-
     const { accessCode } = req.params;
 
     const residency = await getResidencyFromAccessCode(accessCode);
@@ -112,50 +110,6 @@ router.get("/:accessCode/template", async (req, res) => {
 });
 
 /* =====================================================
-   GET NEXT AVAILABLE MAINTENANCE SLOT
-   GET /api/resident/:accessCode/maintenance/next-slot
-===================================================== */
-
-router.get("/:accessCode/maintenance/next-slot", async (req, res) => {
-
-  try {
-
-    const { accessCode } = req.params;
-
-    const residency = await getResidencyFromAccessCode(accessCode);
-
-    if (!residency) {
-      return res.status(404).json({
-        error: "Invalid access code"
-      });
-    }
-
-    const slot = await getNextAvailableSlot(residency.id);
-
-    if (!slot) {
-      return res.json({
-        available: false
-      });
-    }
-
-    return res.json({
-      available: true,
-      suggested_slot: slot
-    });
-
-  } catch (error) {
-
-    console.error("Slot calculation error:", error);
-
-    res.status(500).json({
-      error: "Failed to calculate next available slot"
-    });
-
-  }
-
-});
-
-/* =====================================================
    CREATE MAINTENANCE REQUEST
    POST /api/resident/:accessCode/maintenance
 ===================================================== */
@@ -170,10 +124,20 @@ router.post("/:accessCode/maintenance", async (req, res) => {
       category,
       description,
       unit_number,
-      priority
+      resident_name,
+      resident_phone,
+      priority,
+      preferred_date,
+      preferred_time
     } = req.body;
 
-    if (!category || !description || !unit_number) {
+    if (
+      !category ||
+      !description ||
+      !unit_number ||
+      !resident_name ||
+      !resident_phone
+    ) {
       return res.status(400).json({
         error: "Missing required fields"
       });
@@ -195,40 +159,38 @@ router.post("/:accessCode/maintenance", async (req, res) => {
       (
         residency_id,
         title,
+        category,
+        unit_number,
         description,
+        resident_name,
+        resident_phone,
+        preferred_date,
+        preferred_time,
         priority,
         status
       )
-      VALUES ($1,$2,$3,$4,'pending')
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending')
       RETURNING id
       `,
       [
         residency.id,
         title,
+        category,
+        unit_number,
         description,
+        resident_name,
+        resident_phone,
+        preferred_date || null,
+        preferred_time || null,
         priority || "normal"
       ]
     );
 
     const requestId = insert.rows[0].id;
 
-    if (priority === "urgent") {
-
-      return res.json({
-        success: true,
-        request_id: requestId,
-        urgent: true,
-        message: "Emergency request submitted. Manager will be notified."
-      });
-
-    }
-
-    const suggestedSlot = await getNextAvailableSlot(residency.id);
-
     res.json({
       success: true,
-      request_id: requestId,
-      suggested_slot: suggestedSlot || null
+      request_id: requestId
     });
 
   } catch (error) {
@@ -237,60 +199,6 @@ router.post("/:accessCode/maintenance", async (req, res) => {
 
     res.status(500).json({
       error: "Server error"
-    });
-
-  }
-
-});
-
-/* =====================================================
-   RESIDENT CONFIRM MAINTENANCE SLOT
-   PUT /api/resident/maintenance/:id/confirm
-===================================================== */
-
-router.put("/maintenance/:id/confirm", async (req, res) => {
-
-  try {
-
-    const { id } = req.params;
-    const { scheduled_date, scheduled_time } = req.body;
-
-    if (!scheduled_date || !scheduled_time) {
-      return res.status(400).json({
-        error: "Missing scheduling information"
-      });
-    }
-
-    const result = await pool.query(
-      `
-      UPDATE maintenance_requests
-      SET
-        scheduled_date = $1,
-        scheduled_time = $2,
-        schedule_status = 'confirmed',
-        status = 'scheduled'
-      WHERE id = $3
-      RETURNING id
-      `,
-      [scheduled_date, scheduled_time, id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        error: "Maintenance request not found"
-      });
-    }
-
-    res.json({
-      success: true
-    });
-
-  } catch (error) {
-
-    console.error("Resident confirm schedule error:", error);
-
-    res.status(500).json({
-      error: "Scheduling failed"
     });
 
   }
