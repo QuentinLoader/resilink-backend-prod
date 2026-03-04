@@ -1,5 +1,6 @@
 import express from "express";
 import pool from "../config/db.js";
+import { getNextAvailableSlot } from "../services/scheduling.service.js";
 
 export const router = express.Router();
 
@@ -101,12 +102,58 @@ router.get("/:accessCode/template", async (req, res) => {
 });
 
 /* =====================================================
+   GET NEXT AVAILABLE MAINTENANCE SLOT
+   GET /api/resident/:accessCode/maintenance/next-slot
+===================================================== */
+
+router.get("/:accessCode/maintenance/next-slot", async (req, res) => {
+
+  try {
+
+    const { accessCode } = req.params;
+
+    const residency = await getResidencyFromAccessCode(accessCode);
+
+    if (!residency) {
+      return res.status(404).json({
+        error: "Invalid access code"
+      });
+    }
+
+    const slot = await getNextAvailableSlot(residency.id);
+
+    if (!slot) {
+      return res.json({
+        available: false
+      });
+    }
+
+    return res.json({
+      available: true,
+      suggested_slot: slot
+    });
+
+  } catch (error) {
+
+    console.error("Slot calculation error:", error);
+
+    res.status(500).json({
+      error: "Failed to calculate next available slot"
+    });
+
+  }
+
+});
+
+/* =====================================================
    CREATE MAINTENANCE REQUEST
    POST /api/resident/:accessCode/maintenance
 ===================================================== */
 
 router.post("/:accessCode/maintenance", async (req, res) => {
+
   try {
+
     const { accessCode } = req.params;
 
     const {
@@ -129,10 +176,6 @@ router.post("/:accessCode/maintenance", async (req, res) => {
         error: "Invalid access code"
       });
     }
-
-    /* -----------------------------------------
-       Convert category + unit into title
-    ----------------------------------------- */
 
     const title = `${category} - Unit ${unit_number}`;
 
@@ -157,15 +200,43 @@ router.post("/:accessCode/maintenance", async (req, res) => {
       ]
     );
 
+    const requestId = insert.rows[0].id;
+
+    /* -----------------------------------------
+       URGENT REQUEST HANDLING
+    ----------------------------------------- */
+
+    if (priority === "urgent") {
+
+      return res.json({
+        success: true,
+        request_id: requestId,
+        urgent: true,
+        message: "Emergency request submitted. Manager will be notified."
+      });
+
+    }
+
+    /* -----------------------------------------
+       SUGGEST NEXT AVAILABLE SLOT
+    ----------------------------------------- */
+
+    const suggestedSlot = await getNextAvailableSlot(residency.id);
+
     res.json({
       success: true,
-      request_id: insert.rows[0].id
+      request_id: requestId,
+      suggested_slot: suggestedSlot || null
     });
 
   } catch (error) {
+
     console.error("Maintenance submission error:", error);
+
     res.status(500).json({
       error: "Server error"
     });
+
   }
+
 });
