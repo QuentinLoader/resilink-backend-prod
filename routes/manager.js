@@ -139,6 +139,56 @@ router.post("/residencies", authenticateUser, async (req, res) => {
 });
 
 /* ======================================
+   GET MAINTENANCE REQUESTS FOR RESIDENCY
+   GET /api/manager/residencies/:id/maintenance
+====================================== */
+
+router.get(
+  "/residencies/:id/maintenance",
+  authenticateUser,
+  async (req, res) => {
+    try {
+
+      const { id } = req.params;
+
+      const result = await pool.query(
+        `
+        SELECT
+          id,
+          title,
+          category,
+          unit_number,
+          description,
+          priority,
+          status,
+          resident_name,
+          resident_phone,
+          preferred_date,
+          preferred_time,
+          created_at
+        FROM maintenance_requests
+        WHERE residency_id = $1
+        ORDER BY created_at DESC
+        `,
+        [id]
+      );
+
+      res.json(result.rows);
+
+    } catch (error) {
+
+      console.error("Get maintenance error:", error);
+
+      res.status(500).json({
+        error: "Failed to load maintenance requests"
+      });
+
+    }
+  }
+);
+
+
+/* ======================================
    SCHEDULE MAINTENANCE VISIT
    PUT /api/manager/maintenance/:id/schedule
 ====================================== */
