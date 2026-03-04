@@ -6,7 +6,7 @@ import { enforceSafeMode } from "./middleware/safeMode.js";
 import publicRoutes from "./routes/public.js";
 import managerRoutes from "./routes/manager.js";
 import managerMaintenanceRoutes from "./routes/manager.maintenance.js";
-import residentRoutes from "./routes/resident.js";
+import { router as residentRoutes } from "./routes/resident.js";
 import residentMaintenanceRoutes from "./routes/resident.maintenance.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 
