@@ -1,5 +1,5 @@
 import express from "express";
-import pool from "../db.js";
+import pool from "../config/db.js";
 import { authenticateUser } from "../middleware/auth.js";
 import { enforceManagerResidencyParam } from "../middleware/residencyScope.js";
 
