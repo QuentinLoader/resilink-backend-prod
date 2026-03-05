@@ -57,19 +57,17 @@ router.get("/:accessCode/jobs", async (req, res) => {
     const jobs = await pool.query(
       `
       SELECT
-        m.id,
-        m.title,
-        m.description,
-        m.status,
-        m.scheduled_date,
-        m.scheduled_time,
-        p.name AS property,
-        r.name AS residency
-      FROM maintenance_requests m
-      LEFT JOIN properties p ON m.property_id = p.id
-      LEFT JOIN residencies r ON m.residency_id = r.id
-      WHERE m.artisan_id = $1
-      ORDER BY m.scheduled_date ASC
+       m.id,
+       m.title,
+       m.description,
+       m.status,
+       m.scheduled_date,
+       m.scheduled_time,
+       r.name AS residency
+    FROM maintenance_requests m
+    LEFT JOIN residencies r ON m.residency_id = r.id
+    WHERE m.artisan_id = $1
+    ORDER BY m.scheduled_date ASC
       `,
       [artisanId]
     );
