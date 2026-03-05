@@ -105,3 +105,57 @@ router.get("/:accessCode/jobs", async (req, res) => {
   }
 
 });
+
+/* ===============================
+   START JOB
+   PUT /api/artisan/:accessCode/jobs/:jobId/start
+================================ */
+
+router.put("/:accessCode/jobs/:jobId/start", async (req, res) => {
+
+  const { accessCode, jobId } = req.params;
+
+  try {
+
+    /* get artisan id */
+
+    const artisan = await pool.query(
+      `SELECT id FROM artisans WHERE access_code = $1`,
+      [accessCode]
+    );
+
+    if (artisan.rows.length === 0) {
+      return res.status(404).json({ error: "Invalid artisan code" });
+    }
+
+    const artisanId = artisan.rows[0].id;
+
+    /* update job */
+
+    const result = await pool.query(
+      `
+      UPDATE maintenance_requests
+      SET
+        artisan_id = $1,
+        status = 'in_progress',
+        started_at = NOW()
+      WHERE id = $2
+      RETURNING *
+      `,
+      [artisanId, jobId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+
+    res.json(result.rows[0]);
+
+  } catch (err) {
+
+    console.error("Start job error:", err);
+    res.status(500).json({ error: "Server error" });
+
+  }
+
+});
