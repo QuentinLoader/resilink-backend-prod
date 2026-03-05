@@ -244,5 +244,96 @@ router.put(
     }
   }
 );
+import crypto from "crypto";
+
+/* ===============================
+   CREATE ARTISAN
+   POST /api/manager/residencies/:id/artisans
+================================ */
+
+router.post(
+  "/residencies/:id/artisans",
+  authenticateUser,
+  async (req, res) => {
+
+    const { id } = req.params;
+    const { name, phone, trade } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: "Name is required" });
+    }
+
+    try {
+
+      const accessCode = crypto.randomBytes(4).toString("hex");
+
+      const artisan = await pool.query(
+        `
+        INSERT INTO artisans (name, phone, trade, access_code)
+        VALUES ($1,$2,$3,$4)
+        RETURNING *
+        `,
+        [name, phone, trade, accessCode]
+      );
+
+      await pool.query(
+        `
+        INSERT INTO residency_artisans (residency_id, artisan_id)
+        VALUES ($1,$2)
+        `,
+        [id, artisan.rows[0].id]
+      );
+
+      res.json(artisan.rows[0]);
+
+    } catch (err) {
+
+      console.error("Create artisan error:", err);
+      res.status(500).json({ error: "Server error" });
+
+    }
+  }
+);
+/* ===============================
+   LIST ARTISANS
+   GET /api/manager/residencies/:id/artisans
+================================ */
+
+router.get(
+  "/residencies/:id/artisans",
+  authenticateUser,
+  async (req, res) => {
+
+    const { id } = req.params;
+
+    try {
+
+      const result = await pool.query(
+        `
+        SELECT
+          a.id,
+          a.name,
+          a.phone,
+          a.trade,
+          a.access_code
+        FROM artisans a
+        JOIN residency_artisans ra
+        ON ra.artisan_id = a.id
+        WHERE ra.residency_id = $1
+        ORDER BY a.name
+        `,
+        [id]
+      );
+
+      res.json(result.rows);
+
+    } catch (err) {
+
+      console.error("List artisans error:", err);
+      res.status(500).json({ error: "Server error" });
+
+    }
+  }
+);
 
 export default router;
