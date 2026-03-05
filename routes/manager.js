@@ -244,7 +244,6 @@ router.put(
     }
   }
 );
-import crypto from "crypto";
 
 /* ===============================
    CREATE ARTISAN
