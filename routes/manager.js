@@ -244,7 +244,51 @@ router.put(
     }
   }
 );
+/* ===============================
+   CANCEL MAINTENANCE REQUEST
+   PUT /api/manager/maintenance/:id/cancel
+================================ */
+router.put(
+  "/maintenance/:id/cancel",
+  authenticateUser,
+  enforceSafeMode,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { reason, note } = req.body;
 
+      if (!reason) {
+        return res.status(400).json({ error: "Cancellation reason required" });
+      }
+
+      const cancelReason =
+        reason === "Other" && note ? `Other: ${note}` : reason;
+
+      const result = await pool.query(
+        `
+        UPDATE maintenance_requests
+        SET
+          status = 'cancelled',
+          cancel_reason = $1,
+          cancelled_by = $2,
+          cancelled_at = NOW()
+        WHERE id = $3
+        RETURNING *
+        `,
+        [cancelReason, req.user.id, id]
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({ error: "Maintenance request not found" });
+      }
+
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Cancel maintenance error:", err);
+      res.status(500).json({ error: "Failed to cancel request" });
+    }
+  }
+);
 /* ===============================
    CREATE ARTISAN
    POST /api/manager/residencies/:id/artisans
