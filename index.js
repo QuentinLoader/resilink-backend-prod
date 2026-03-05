@@ -10,6 +10,7 @@ import { router as residentRoutes } from "./routes/resident.js";
 import residentMaintenanceRoutes from "./routes/resident.maintenance.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 import { router as artisanRoutes } from "./routes/artisan.js";
+import { router as residentKnowledge } from "./routes/residentKnowledge.js";
 
 const app = express();
 
@@ -78,6 +79,11 @@ app.use("/api/manager", managerMaintenanceRoutes);
 
 app.use("/api/artisan", artisanRoutes);
 
+/* =========================================
+   Resident Knowledge Base
+========================================= */
+
+app.use("/api/resident/knowledge", residentKnowledge);
 
 /* =========================================
    Start Server
