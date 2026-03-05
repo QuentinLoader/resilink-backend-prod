@@ -426,4 +426,43 @@ router.put(
   }
 );
 
+/* ===============================
+   REMOVE ARTISAN FROM RESIDENCY
+   DELETE /api/manager/residencies/:residencyId/artisans/:artisanId
+================================ */
+
+router.delete(
+  "/residencies/:residencyId/artisans/:artisanId",
+  authenticateUser,
+  async (req, res) => {
+
+    const { residencyId, artisanId } = req.params;
+
+    try {
+
+      const result = await pool.query(
+        `
+        DELETE FROM residency_artisans
+        WHERE residency_id = $1
+        AND artisan_id = $2
+        RETURNING *
+        `,
+        [residencyId, artisanId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Artisan not linked to residency" });
+      }
+
+      res.json({ success: true });
+
+    } catch (err) {
+
+      console.error("Remove artisan from residency error:", err);
+      res.status(500).json({ error: "Server error" });
+
+    }
+  }
+);
+
 export default router;
