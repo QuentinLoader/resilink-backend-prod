@@ -134,12 +134,12 @@ router.post("/residencies", authenticateUser, async (req, res) => {
 /* ======================================
    GET MAINTENANCE REQUESTS FOR RESIDENCY
 ====================================== */
-
 router.get(
   "/residencies/:id/maintenance",
   authenticateUser,
   async (req, res) => {
     try {
+
       const { id } = req.params;
       const { status } = req.query;
 
@@ -173,13 +173,10 @@ router.get(
           cancelled_at,
           cancelled_by,
           created_at,
-
           EXTRACT(EPOCH FROM (NOW() - created_at)) / 3600 AS job_age_hours
-
         FROM maintenance_requests
         WHERE residency_id = $1
         ${statusFilter}
-
         ORDER BY created_at DESC
         `,
         params
@@ -202,7 +199,6 @@ router.get(
 /* ======================================
    SCHEDULE MAINTENANCE VISIT
 ====================================== */
-
 router.put(
   "/maintenance/:id/schedule",
   authenticateUser,
@@ -210,7 +206,12 @@ router.put(
     try {
 
       const { id } = req.params;
-      const { scheduled_date, scheduled_time, schedule_notes } = req.body;
+
+      const {
+        scheduled_date,
+        scheduled_time,
+        schedule_notes
+      } = req.body;
 
       if (!scheduled_date || !scheduled_time) {
         return res.status(400).json({
@@ -248,11 +249,11 @@ router.put(
 /* ===============================
    CANCEL MAINTENANCE REQUEST
 ================================ */
-
 router.put(
   "/maintenance/:id/cancel",
   authenticateUser,
   async (req, res) => {
+
     try {
 
       const { id } = req.params;
@@ -293,3 +294,216 @@ router.put(
     }
   }
 );
+
+/* ===============================
+   CREATE ARTISAN
+================================ */
+router.post(
+  "/residencies/:id/artisans",
+  authenticateUser,
+  async (req, res) => {
+
+    const { id } = req.params;
+    const { name, phone, trade } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: "Name is required" });
+    }
+
+    try {
+
+      const accessCode = crypto.randomBytes(4).toString("hex");
+
+      const artisan = await pool.query(
+        `
+        INSERT INTO artisans (name, phone, trade, access_code)
+        VALUES ($1,$2,$3,$4)
+        RETURNING *
+        `,
+        [name, phone, trade, accessCode]
+      );
+
+      await pool.query(
+        `
+        INSERT INTO residency_artisans (residency_id, artisan_id)
+        VALUES ($1,$2)
+        `,
+        [id, artisan.rows[0].id]
+      );
+
+      res.json(artisan.rows[0]);
+
+    } catch (err) {
+
+      console.error("Create artisan error:", err);
+      res.status(500).json({ error: "Server error" });
+
+    }
+  }
+);
+
+/* ===============================
+   LIST ARTISANS
+================================ */
+router.get(
+  "/residencies/:id/artisans",
+  authenticateUser,
+  async (req, res) => {
+
+    const { id } = req.params;
+
+    try {
+
+      const result = await pool.query(
+        `
+        SELECT
+          a.id,
+          a.name,
+          a.phone,
+          a.trade,
+          a.access_code
+        FROM artisans a
+        JOIN residency_artisans ra
+        ON ra.artisan_id = a.id
+        WHERE ra.residency_id = $1
+        ORDER BY a.name
+        `,
+        [id]
+      );
+
+      res.json(result.rows);
+
+    } catch (err) {
+
+      console.error("List artisans error:", err);
+      res.status(500).json({ error: "Server error" });
+
+    }
+  }
+);
+
+/* ===============================
+   GET ARTISAN JOBS
+================================ */
+router.get(
+  "/artisans/:id/jobs",
+  authenticateUser,
+  async (req, res) => {
+
+    const { id } = req.params;
+
+    try {
+
+      const result = await pool.query(
+        `
+        SELECT
+          m.id,
+          m.title,
+          m.description,
+          m.status,
+          m.scheduled_date,
+          m.scheduled_time,
+          r.name AS residency
+        FROM maintenance_requests m
+        LEFT JOIN residencies r ON m.residency_id = r.id
+        WHERE m.artisan_id = $1
+        ORDER BY m.scheduled_date ASC
+        `,
+        [id]
+      );
+
+      res.json(result.rows);
+
+    } catch (err) {
+
+      console.error("Manager artisan jobs error:", err);
+      res.status(500).json({ error: "Server error" });
+
+    }
+  }
+);
+
+/* ===============================
+   ASSIGN ARTISAN TO JOB
+================================ */
+router.put(
+  "/maintenance/:id/assign-artisan",
+  authenticateUser,
+  async (req, res) => {
+
+    const { id } = req.params;
+    const { artisan_id, scheduled_date, scheduled_time } = req.body;
+
+    if (!artisan_id) {
+      return res.status(400).json({ error: "artisan_id required" });
+    }
+
+    try {
+
+      const result = await pool.query(
+        `
+        UPDATE maintenance_requests
+        SET
+          artisan_id = $1,
+          scheduled_date = $2,
+          scheduled_time = $3,
+          status = 'scheduled'
+        WHERE id = $4
+        RETURNING *
+        `,
+        [artisan_id, scheduled_date, scheduled_time, id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Maintenance request not found" });
+      }
+
+      res.json(result.rows[0]);
+
+    } catch (err) {
+
+      console.error("Assign artisan error:", err);
+      res.status(500).json({ error: "Server error" });
+
+    }
+  }
+);
+
+/* ===============================
+   REMOVE ARTISAN FROM RESIDENCY
+================================ */
+router.delete(
+  "/residencies/:residencyId/artisans/:artisanId",
+  authenticateUser,
+  async (req, res) => {
+
+    const { residencyId, artisanId } = req.params;
+
+    try {
+
+      const result = await pool.query(
+        `
+        DELETE FROM residency_artisans
+        WHERE residency_id = $1
+        AND artisan_id = $2
+        RETURNING *
+        `,
+        [residencyId, artisanId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Artisan not linked to residency" });
+      }
+
+      res.json({ success: true });
+
+    } catch (err) {
+
+      console.error("Remove artisan error:", err);
+      res.status(500).json({ error: "Server error" });
+
+    }
+  }
+);
+
+export default router;
