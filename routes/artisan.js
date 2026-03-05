@@ -188,6 +188,7 @@ router.put("/:accessCode/jobs/:jobId/start", async (req, res) => {
         started_at = NOW()
       WHERE id = $1
       AND artisan_id = $2
+      AND status = 'claimed'
       RETURNING *
       `,
       [jobId, artisanId]
@@ -202,6 +203,56 @@ router.put("/:accessCode/jobs/:jobId/start", async (req, res) => {
   } catch (err) {
 
     console.error("Start job error:", err);
+    res.status(500).json({ error: "Server error" });
+
+  }
+
+});
+/* ===============================
+   COMPLETE JOB
+   PUT /api/artisan/:accessCode/jobs/:jobId/complete
+================================ */
+
+router.put("/:accessCode/jobs/:jobId/complete", async (req, res) => {
+
+  const { accessCode, jobId } = req.params;
+
+  try {
+
+    const artisan = await pool.query(
+      `SELECT id FROM artisans WHERE access_code = $1`,
+      [accessCode]
+    );
+
+    if (artisan.rows.length === 0) {
+      return res.status(404).json({ error: "Invalid artisan code" });
+    }
+
+    const artisanId = artisan.rows[0].id;
+
+    const result = await pool.query(
+      `
+      UPDATE maintenance_requests
+      SET
+        status = 'completed',
+        completed_at = NOW()
+      WHERE id = $1
+      AND artisan_id = $2
+      AND status = 'in_progress'
+      RETURNING *
+      `,
+      [jobId, artisanId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: "Job cannot be completed" });
+    }
+
+    res.json(result.rows[0]);
+
+  } catch (err) {
+
+    console.error("Complete job error:", err);
     res.status(500).json({ error: "Server error" });
 
   }
