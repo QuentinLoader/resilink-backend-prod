@@ -251,8 +251,7 @@ router.put(
 router.put(
   "/maintenance/:id/cancel",
   authenticateUser,
-  enforceSafeMode,
-  async (req, res) => {
+   async (req, res) => {
     try {
       const { id } = req.params;
       const { reason, note } = req.body;
