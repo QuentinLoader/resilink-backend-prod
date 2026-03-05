@@ -7,7 +7,6 @@ const router = express.Router();
 
 /* ===============================
    Helper: Generate Residency Access Code
-   (Unified secure generator)
 ================================ */
 function generateAccessCode() {
   return "R-" + crypto.randomBytes(3).toString("hex").toUpperCase();
@@ -28,7 +27,6 @@ async function getManagerDbId(supabaseUserId) {
 
 /* ===============================
    GET MANAGER RESIDENCIES
-   GET /api/manager/residencies
 ================================ */
 router.get("/residencies", authenticateUser, async (req, res) => {
   try {
@@ -64,7 +62,6 @@ router.get("/residencies", authenticateUser, async (req, res) => {
 
 /* ===============================
    CREATE NEW RESIDENCY
-   POST /api/manager/residencies
 ================================ */
 router.post("/residencies", authenticateUser, async (req, res) => {
   const { name, property_type } = req.body;
@@ -87,7 +84,6 @@ router.post("/residencies", authenticateUser, async (req, res) => {
       return res.status(404).json({ error: "Manager not found" });
     }
 
-    // Generate secure access code with rare collision retry
     let accessCode;
     let residencyResult;
 
@@ -103,12 +99,9 @@ router.post("/residencies", authenticateUser, async (req, res) => {
           `,
           [name, property_type, accessCode]
         );
-        break; // success
+        break;
       } catch (err) {
-        // Retry only on unique violation
-        if (err.code !== "23505") {
-          throw err;
-        }
+        if (err.code !== "23505") throw err;
       }
     }
 
@@ -140,7 +133,6 @@ router.post("/residencies", authenticateUser, async (req, res) => {
 
 /* ======================================
    GET MAINTENANCE REQUESTS FOR RESIDENCY
-   GET /api/manager/residencies/:id/maintenance
 ====================================== */
 
 router.get(
@@ -148,8 +140,18 @@ router.get(
   authenticateUser,
   async (req, res) => {
     try {
-
       const { id } = req.params;
+      const { status } = req.query;
+
+      let statusFilter = "";
+      let params = [id];
+
+      if (status) {
+        statusFilter = "AND status = $2";
+        params.push(status);
+      } else {
+        statusFilter = "AND status != 'cancelled'";
+      }
 
       const result = await pool.query(
         `
@@ -165,15 +167,22 @@ router.get(
           resident_phone,
           preferred_date,
           preferred_time,
+          scheduled_date,
+          scheduled_time,
+          cancel_reason,
+          cancelled_at,
+          cancelled_by,
           created_at,
 
           EXTRACT(EPOCH FROM (NOW() - created_at)) / 3600 AS job_age_hours
 
         FROM maintenance_requests
         WHERE residency_id = $1
+        ${statusFilter}
+
         ORDER BY created_at DESC
         `,
-        [id]
+        params
       );
 
       res.json(result.rows);
@@ -190,10 +199,8 @@ router.get(
   }
 );
 
-
 /* ======================================
    SCHEDULE MAINTENANCE VISIT
-   PUT /api/manager/maintenance/:id/schedule
 ====================================== */
 
 router.put(
@@ -203,12 +210,7 @@ router.put(
     try {
 
       const { id } = req.params;
-
-      const {
-        scheduled_date,
-        scheduled_time,
-        schedule_notes
-      } = req.body;
+      const { scheduled_date, scheduled_time, schedule_notes } = req.body;
 
       if (!scheduled_date || !scheduled_time) {
         return res.status(400).json({
@@ -234,9 +236,7 @@ router.put(
         ]
       );
 
-      res.json({
-        success: true
-      });
+      res.json({ success: true });
 
     } catch (error) {
       console.error("Schedule error:", error);
@@ -244,15 +244,17 @@ router.put(
     }
   }
 );
+
 /* ===============================
    CANCEL MAINTENANCE REQUEST
-   PUT /api/manager/maintenance/:id/cancel
 ================================ */
+
 router.put(
   "/maintenance/:id/cancel",
   authenticateUser,
-   async (req, res) => {
+  async (req, res) => {
     try {
+
       const { id } = req.params;
       const { reason, note } = req.body;
 
@@ -282,230 +284,12 @@ router.put(
       }
 
       res.json(result.rows[0]);
+
     } catch (err) {
+
       console.error("Cancel maintenance error:", err);
       res.status(500).json({ error: "Failed to cancel request" });
-    }
-  }
-);
-/* ===============================
-   CREATE ARTISAN
-   POST /api/manager/residencies/:id/artisans
-================================ */
-
-router.post(
-  "/residencies/:id/artisans",
-  authenticateUser,
-  async (req, res) => {
-
-    const { id } = req.params;
-    const { name, phone, trade } = req.body;
-
-    if (!name) {
-      return res.status(400).json({ error: "Name is required" });
-    }
-
-    try {
-
-      const accessCode = crypto.randomBytes(4).toString("hex");
-
-      const artisan = await pool.query(
-        `
-        INSERT INTO artisans (name, phone, trade, access_code)
-        VALUES ($1,$2,$3,$4)
-        RETURNING *
-        `,
-        [name, phone, trade, accessCode]
-      );
-
-      await pool.query(
-        `
-        INSERT INTO residency_artisans (residency_id, artisan_id)
-        VALUES ($1,$2)
-        `,
-        [id, artisan.rows[0].id]
-      );
-
-      res.json(artisan.rows[0]);
-
-    } catch (err) {
-
-      console.error("Create artisan error:", err);
-      res.status(500).json({ error: "Server error" });
 
     }
   }
 );
-/* ===============================
-   LIST ARTISANS
-   GET /api/manager/residencies/:id/artisans
-================================ */
-
-router.get(
-  "/residencies/:id/artisans",
-  authenticateUser,
-  async (req, res) => {
-
-    const { id } = req.params;
-
-    try {
-
-      const result = await pool.query(
-        `
-        SELECT
-          a.id,
-          a.name,
-          a.phone,
-          a.trade,
-          a.access_code
-        FROM artisans a
-        JOIN residency_artisans ra
-        ON ra.artisan_id = a.id
-        WHERE ra.residency_id = $1
-        ORDER BY a.name
-        `,
-        [id]
-      );
-
-      res.json(result.rows);
-
-    } catch (err) {
-
-      console.error("List artisans error:", err);
-      res.status(500).json({ error: "Server error" });
-
-    }
-  }
-);
-
-/* ===============================
-   GET ARTISAN JOBS
-   GET /api/manager/artisans/:id/jobs
-================================ */
-
-router.get(
-  "/artisans/:id/jobs",
-  authenticateUser,
-  async (req, res) => {
-
-    const { id } = req.params;
-
-    try {
-
-      const result = await pool.query(
-        `
-        SELECT
-          m.id,
-          m.title,
-          m.description,
-          m.status,
-          m.scheduled_date,
-          m.scheduled_time,
-          r.name AS residency
-        FROM maintenance_requests m
-        LEFT JOIN residencies r ON m.residency_id = r.id
-        WHERE m.artisan_id = $1
-        ORDER BY m.scheduled_date ASC
-        `,
-        [id]
-      );
-
-      res.json(result.rows);
-
-    } catch (err) {
-
-      console.error("Manager artisan jobs error:", err);
-      res.status(500).json({ error: "Server error" });
-
-    }
-  }
-);
-
-/* ===============================
-   ASSIGN ARTISAN TO JOB
-   PUT /api/manager/maintenance/:id/assign-artisan
-================================ */
-
-router.put(
-  "/maintenance/:id/assign-artisan",
-  authenticateUser,
-  async (req, res) => {
-
-    const { id } = req.params;
-    const { artisan_id, scheduled_date, scheduled_time } = req.body;
-
-    if (!artisan_id) {
-      return res.status(400).json({ error: "artisan_id required" });
-    }
-
-    try {
-
-      const result = await pool.query(
-        `
-        UPDATE maintenance_requests
-        SET
-          artisan_id = $1,
-          scheduled_date = $2,
-          scheduled_time = $3,
-          status = 'scheduled'
-        WHERE id = $4
-        RETURNING *
-        `,
-        [artisan_id, scheduled_date, scheduled_time, id]
-      );
-
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: "Maintenance request not found" });
-      }
-
-      res.json(result.rows[0]);
-
-    } catch (err) {
-
-      console.error("Assign artisan error:", err);
-      res.status(500).json({ error: "Server error" });
-
-    }
-  }
-);
-
-/* ===============================
-   REMOVE ARTISAN FROM RESIDENCY
-   DELETE /api/manager/residencies/:residencyId/artisans/:artisanId
-================================ */
-
-router.delete(
-  "/residencies/:residencyId/artisans/:artisanId",
-  authenticateUser,
-  async (req, res) => {
-
-    const { residencyId, artisanId } = req.params;
-
-    try {
-
-      const result = await pool.query(
-        `
-        DELETE FROM residency_artisans
-        WHERE residency_id = $1
-        AND artisan_id = $2
-        RETURNING *
-        `,
-        [residencyId, artisanId]
-      );
-
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: "Artisan not linked to residency" });
-      }
-
-      res.json({ success: true });
-
-    } catch (err) {
-
-      console.error("Remove artisan from residency error:", err);
-      res.status(500).json({ error: "Server error" });
-
-    }
-  }
-);
-
-export default router;
