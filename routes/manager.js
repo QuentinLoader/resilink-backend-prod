@@ -334,5 +334,52 @@ router.get(
     }
   }
 );
+/* ===============================
+   ASSIGN ARTISAN TO JOB
+   PUT /api/manager/maintenance/:id/assign-artisan
+================================ */
+
+router.put(
+  "/maintenance/:id/assign-artisan",
+  authenticateUser,
+  async (req, res) => {
+
+    const { id } = req.params;
+    const { artisan_id, scheduled_date, scheduled_time } = req.body;
+
+    if (!artisan_id) {
+      return res.status(400).json({ error: "artisan_id required" });
+    }
+
+    try {
+
+      const result = await pool.query(
+        `
+        UPDATE maintenance_requests
+        SET
+          artisan_id = $1,
+          scheduled_date = $2,
+          scheduled_time = $3,
+          status = 'scheduled'
+        WHERE id = $4
+        RETURNING *
+        `,
+        [artisan_id, scheduled_date, scheduled_time, id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Maintenance request not found" });
+      }
+
+      res.json(result.rows[0]);
+
+    } catch (err) {
+
+      console.error("Assign artisan error:", err);
+      res.status(500).json({ error: "Server error" });
+
+    }
+  }
+);
 
 export default router;
