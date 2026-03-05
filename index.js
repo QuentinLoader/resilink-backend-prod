@@ -9,8 +9,10 @@ import managerMaintenanceRoutes from "./routes/manager.maintenance.js";
 import { router as residentRoutes } from "./routes/resident.js";
 import residentMaintenanceRoutes from "./routes/resident.maintenance.js";
 import whatsappRoutes from "./routes/whatsapp.js";
+import { router as artisanRoutes } from "./routes/artisan.js";
 
 const app = express();
+
 
 /* =========================================
    Core Middleware
@@ -62,6 +64,20 @@ app.use("/api/resident/maintenance", residentMaintenanceRoutes);
 
 app.use("/api/manager", managerRoutes);
 app.use("/api/manager", managerMaintenanceRoutes);
+
+/* =========================================
+   Manager Dashboard
+========================================= */
+
+app.use("/api/manager", managerRoutes);
+app.use("/api/manager", managerMaintenanceRoutes);
+
+/* =========================================
+   Artisan Portal
+========================================= */
+
+app.use("/api/artisan", artisanRoutes);
+
 
 /* =========================================
    Start Server
