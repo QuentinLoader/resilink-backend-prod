@@ -12,6 +12,7 @@ router.get("/:accessCode/profile", async (req, res) => {
   const { accessCode } = req.params;
 
   try {
+
     const result = await pool.query(
       `
       SELECT id, name, phone, trade
@@ -33,15 +34,19 @@ router.get("/:accessCode/profile", async (req, res) => {
   }
 });
 
+
 /* ===============================
    GET ARTISAN JOBS
    GET /api/artisan/:accessCode/jobs
 ================================ */
 
 router.get("/:accessCode/jobs", async (req, res) => {
+
   const { accessCode } = req.params;
 
   try {
+
+    /* get artisan id */
 
     const artisan = await pool.query(
       `SELECT id FROM artisans WHERE access_code = $1`,
@@ -54,20 +59,38 @@ router.get("/:accessCode/jobs", async (req, res) => {
 
     const artisanId = artisan.rows[0].id;
 
+
+    /* get jobs for residencies artisan belongs to */
+
     const jobs = await pool.query(
       `
       SELECT
-       m.id,
-       m.title,
-       m.description,
-       m.status,
-       m.scheduled_date,
-       m.scheduled_time,
-       r.name AS residency
-    FROM maintenance_requests m
-    LEFT JOIN residencies r ON m.residency_id = r.id
-    WHERE m.artisan_id = $1
-    ORDER BY m.scheduled_date ASC
+        m.id,
+        m.title,
+        m.description,
+        m.status,
+        m.category,
+        m.unit_number,
+        m.resident_name,
+        m.resident_phone,
+        m.preferred_date,
+        m.preferred_time,
+        m.scheduled_date,
+        m.scheduled_time,
+        r.name AS residency
+
+      FROM maintenance_requests m
+
+      JOIN residency_artisans ra
+        ON ra.residency_id = m.residency_id
+
+      LEFT JOIN residencies r
+        ON r.id = m.residency_id
+
+      WHERE ra.artisan_id = $1
+      AND m.status != 'cancelled'
+
+      ORDER BY m.created_at DESC
       `,
       [artisanId]
     );
@@ -75,7 +98,10 @@ router.get("/:accessCode/jobs", async (req, res) => {
     res.json(jobs.rows);
 
   } catch (err) {
+
     console.error("Artisan jobs error:", err);
     res.status(500).json({ error: "Server error" });
+
   }
+
 });
