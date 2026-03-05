@@ -334,6 +334,50 @@ router.get(
     }
   }
 );
+
+/* ===============================
+   GET ARTISAN JOBS
+   GET /api/manager/artisans/:id/jobs
+================================ */
+
+router.get(
+  "/artisans/:id/jobs",
+  authenticateUser,
+  async (req, res) => {
+
+    const { id } = req.params;
+
+    try {
+
+      const result = await pool.query(
+        `
+        SELECT
+          m.id,
+          m.title,
+          m.description,
+          m.status,
+          m.scheduled_date,
+          m.scheduled_time,
+          r.name AS residency
+        FROM maintenance_requests m
+        LEFT JOIN residencies r ON m.residency_id = r.id
+        WHERE m.artisan_id = $1
+        ORDER BY m.scheduled_date ASC
+        `,
+        [id]
+      );
+
+      res.json(result.rows);
+
+    } catch (err) {
+
+      console.error("Manager artisan jobs error:", err);
+      res.status(500).json({ error: "Server error" });
+
+    }
+  }
+);
+
 /* ===============================
    ASSIGN ARTISAN TO JOB
    PUT /api/manager/maintenance/:id/assign-artisan
