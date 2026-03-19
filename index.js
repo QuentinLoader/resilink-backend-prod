@@ -83,7 +83,7 @@ app.use("/api/artisan", artisanRoutes);
    Resident Knowledge Base
 ========================================= */
 
-app.use("/api/resident/knowledge", residentKnowledge);
+app.use("/api/resident", residentKnowledge);
 
 /* =========================================
    Start Server
