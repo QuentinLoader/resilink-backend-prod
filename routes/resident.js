@@ -47,66 +47,13 @@ router.get("/:accessCode/info", async (req, res) => {
       residency_name: residency.name,
       access_code: residency.access_code
     });
-
   } catch (error) {
-
     console.error("Resident info error:", error);
 
     res.status(500).json({
       error: "Server error"
     });
-
   }
-});
-
-/* =====================================================
-   GET RESIDENT KNOWLEDGE TEMPLATE
-   GET /api/resident/:accessCode/template
-===================================================== */
-
-router.get("/:accessCode/template", async (req, res) => {
-
-  try {
-
-    const { accessCode } = req.params;
-
-    const residency = await getResidencyFromAccessCode(accessCode);
-
-    if (!residency) {
-      return res.status(404).json({
-        error: "Invalid access code"
-      });
-    }
-
-    const result = await pool.query(
-      `
-      SELECT
-        id,
-        section,
-        title,
-        content
-      FROM template_items
-      WHERE residency_id = $1
-      ORDER BY section
-      `,
-      [residency.id]
-    );
-
-    res.json({
-      residency_id: residency.id,
-      items: result.rows
-    });
-
-  } catch (error) {
-
-    console.error("Template load error:", error);
-
-    res.status(500).json({
-      error: "Server error"
-    });
-
-  }
-
 });
 
 /* =====================================================
@@ -115,9 +62,7 @@ router.get("/:accessCode/template", async (req, res) => {
 ===================================================== */
 
 router.post("/:accessCode/maintenance", async (req, res) => {
-
   try {
-
     const { accessCode } = req.params;
 
     const {
@@ -192,15 +137,11 @@ router.post("/:accessCode/maintenance", async (req, res) => {
       success: true,
       request_id: requestId
     });
-
   } catch (error) {
-
     console.error("Maintenance submission error:", error);
 
     res.status(500).json({
       error: "Server error"
     });
-
   }
-
 });
