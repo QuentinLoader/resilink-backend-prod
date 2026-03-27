@@ -57,7 +57,7 @@ export async function authenticateUser(req, res, next) {
     }
 
     const header = decodeProtectedHeader(token);
-    console.log("JWT header:", header);
+    //console.log("JWT header:", header);
 
     let payload;
 
