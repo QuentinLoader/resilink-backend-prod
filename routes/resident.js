@@ -10,7 +10,7 @@ export const router = express.Router();
 async function getResidencyFromAccessCode(accessCode) {
   const result = await pool.query(
     `
-    SELECT id, name, access_code
+    SELECT id, name, access_code, is_archived, archived_at
     FROM residencies
     WHERE access_code = $1
     LIMIT 1
@@ -39,6 +39,12 @@ router.get("/:accessCode/info", async (req, res) => {
     if (!residency) {
       return res.status(404).json({
         error: "Invalid access code"
+      });
+    }
+
+    if (residency.is_archived) {
+      return res.status(403).json({
+        error: "RESIDENCY_ARCHIVED"
       });
     }
 
@@ -93,6 +99,12 @@ router.post("/:accessCode/maintenance", async (req, res) => {
     if (!residency) {
       return res.status(404).json({
         error: "Invalid access code"
+      });
+    }
+
+    if (residency.is_archived) {
+      return res.status(403).json({
+        error: "RESIDENCY_ARCHIVED"
       });
     }
 
