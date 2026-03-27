@@ -26,6 +26,24 @@ async function getManagerDbId(supabaseUserId) {
 }
 
 /* ===============================
+   Helper: Check manager access to residency
+================================ */
+async function managerHasResidencyAccess(managerDbId, residencyId) {
+  const result = await pool.query(
+    `
+    SELECT 1
+    FROM manager_residencies
+    WHERE manager_id = $1
+      AND residency_id = $2
+    LIMIT 1
+    `,
+    [managerDbId, residencyId]
+  );
+
+  return result.rows.length > 0;
+}
+
+/* ===============================
    GET MANAGER RESIDENCIES
 ================================ */
 router.get("/residencies", authenticateUser, async (req, res) => {
@@ -43,6 +61,8 @@ router.get("/residencies", authenticateUser, async (req, res) => {
         r.name,
         r.property_type,
         r.access_code,
+        r.is_archived,
+        r.archived_at,
         r.created_at
       FROM residencies r
       JOIN manager_residencies mr
@@ -95,7 +115,7 @@ router.post("/residencies", authenticateUser, async (req, res) => {
           `
           INSERT INTO residencies (name, property_type, access_code)
           VALUES ($1, $2, $3)
-          RETURNING id, name, property_type, access_code, created_at;
+          RETURNING id, name, property_type, access_code, is_archived, archived_at, created_at;
           `,
           [name, property_type, accessCode]
         );
@@ -128,6 +148,96 @@ router.post("/residencies", authenticateUser, async (req, res) => {
     res.status(500).json({ error: "Failed to create residency" });
   } finally {
     client.release();
+  }
+});
+
+/* ===============================
+   ARCHIVE RESIDENCY
+================================ */
+router.put("/residencies/:id/archive", authenticateUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const managerDbId = await getManagerDbId(req.user.id);
+
+    if (!managerDbId) {
+      return res.status(404).json({ error: "Manager not found" });
+    }
+
+    const hasAccess = await managerHasResidencyAccess(managerDbId, id);
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE residencies
+      SET
+        is_archived = TRUE,
+        archived_at = NOW()
+      WHERE id = $1
+      RETURNING id, name, property_type, access_code, is_archived, archived_at, created_at
+      `,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Residency not found" });
+    }
+
+    res.json({
+      success: true,
+      residency: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Archive residency error:", error);
+    res.status(500).json({ error: "Failed to archive residency" });
+  }
+});
+
+/* ===============================
+   UNARCHIVE RESIDENCY
+================================ */
+router.put("/residencies/:id/unarchive", authenticateUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const managerDbId = await getManagerDbId(req.user.id);
+
+    if (!managerDbId) {
+      return res.status(404).json({ error: "Manager not found" });
+    }
+
+    const hasAccess = await managerHasResidencyAccess(managerDbId, id);
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE residencies
+      SET
+        is_archived = FALSE,
+        archived_at = NULL
+      WHERE id = $1
+      RETURNING id, name, property_type, access_code, is_archived, archived_at, created_at
+      `,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Residency not found" });
+    }
+
+    res.json({
+      success: true,
+      residency: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Unarchive residency error:", error);
+    res.status(500).json({ error: "Failed to unarchive residency" });
   }
 });
 
@@ -505,6 +615,7 @@ router.delete(
     }
   }
 );
+
 /* =========================================================
    GET KNOWLEDGE BASE (MANAGER VIEW)
    GET /api/manager/residencies/:id/template
@@ -572,6 +683,7 @@ router.get(
     }
   }
 );
+
 /* ===============================
    CREATE ANNOUNCEMENT
 ================================ */
@@ -635,4 +747,5 @@ router.post(
     }
   }
 );
+
 export default router;
