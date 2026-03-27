@@ -249,7 +249,6 @@ router.get(
   authenticateUser,
   async (req, res) => {
     try {
-
       const { id } = req.params;
       const { status } = req.query;
 
@@ -293,15 +292,12 @@ router.get(
       );
 
       res.json(result.rows);
-
     } catch (error) {
-
       console.error("Get maintenance error:", error);
 
       res.status(500).json({
         error: "Failed to load maintenance requests"
       });
-
     }
   }
 );
@@ -314,7 +310,6 @@ router.put(
   authenticateUser,
   async (req, res) => {
     try {
-
       const { id } = req.params;
 
       const {
@@ -348,7 +343,6 @@ router.put(
       );
 
       res.json({ success: true });
-
     } catch (error) {
       console.error("Schedule error:", error);
       res.status(500).json({ error: "Server error" });
@@ -363,9 +357,7 @@ router.put(
   "/maintenance/:id/cancel",
   authenticateUser,
   async (req, res) => {
-
     try {
-
       const { id } = req.params;
       const { reason, note } = req.body;
 
@@ -395,12 +387,9 @@ router.put(
       }
 
       res.json(result.rows[0]);
-
     } catch (err) {
-
       console.error("Cancel maintenance error:", err);
       res.status(500).json({ error: "Failed to cancel request" });
-
     }
   }
 );
@@ -412,7 +401,6 @@ router.post(
   "/residencies/:id/artisans",
   authenticateUser,
   async (req, res) => {
-
     const { id } = req.params;
     const { name, phone, trade } = req.body;
 
@@ -421,7 +409,6 @@ router.post(
     }
 
     try {
-
       const accessCode = crypto.randomBytes(4).toString("hex");
 
       const artisan = await pool.query(
@@ -442,12 +429,9 @@ router.post(
       );
 
       res.json(artisan.rows[0]);
-
     } catch (err) {
-
       console.error("Create artisan error:", err);
       res.status(500).json({ error: "Server error" });
-
     }
   }
 );
@@ -459,11 +443,9 @@ router.get(
   "/residencies/:id/artisans",
   authenticateUser,
   async (req, res) => {
-
     const { id } = req.params;
 
     try {
-
       const result = await pool.query(
         `
         SELECT
@@ -482,12 +464,9 @@ router.get(
       );
 
       res.json(result.rows);
-
     } catch (err) {
-
       console.error("List artisans error:", err);
       res.status(500).json({ error: "Server error" });
-
     }
   }
 );
@@ -499,11 +478,9 @@ router.get(
   "/artisans/:id/jobs",
   authenticateUser,
   async (req, res) => {
-
     const { id } = req.params;
 
     try {
-
       const result = await pool.query(
         `
         SELECT
@@ -523,24 +500,20 @@ router.get(
       );
 
       res.json(result.rows);
-
     } catch (err) {
-
       console.error("Manager artisan jobs error:", err);
       res.status(500).json({ error: "Server error" });
-
     }
   }
 );
 
 /* ===============================
-   ASSIGN ARTISAN TO JOB
+   ASSIGN / REASSIGN ARTISAN TO JOB
 ================================ */
 router.put(
   "/maintenance/:id/assign-artisan",
   authenticateUser,
   async (req, res) => {
-
     const { id } = req.params;
     const { artisan_id, scheduled_date, scheduled_time } = req.body;
 
@@ -549,7 +522,6 @@ router.put(
     }
 
     try {
-
       const result = await pool.query(
         `
         UPDATE maintenance_requests
@@ -557,11 +529,22 @@ router.put(
           artisan_id = $1,
           scheduled_date = $2,
           scheduled_time = $3,
-          status = 'scheduled'
+
+          -- ownership + state reset
+          status = 'claimed',
+          claimed_at = NOW(),
+          started_at = NULL,
+          completed_at = NULL
+
         WHERE id = $4
         RETURNING *
         `,
-        [artisan_id, scheduled_date, scheduled_time, id]
+        [
+          artisan_id,
+          scheduled_date || null,
+          scheduled_time || null,
+          id
+        ]
       );
 
       if (result.rows.length === 0) {
@@ -569,12 +552,9 @@ router.put(
       }
 
       res.json(result.rows[0]);
-
     } catch (err) {
-
       console.error("Assign artisan error:", err);
       res.status(500).json({ error: "Server error" });
-
     }
   }
 );
@@ -586,11 +566,9 @@ router.delete(
   "/residencies/:residencyId/artisans/:artisanId",
   authenticateUser,
   async (req, res) => {
-
     const { residencyId, artisanId } = req.params;
 
     try {
-
       const result = await pool.query(
         `
         DELETE FROM residency_artisans
@@ -606,12 +584,9 @@ router.delete(
       }
 
       res.json({ success: true });
-
     } catch (err) {
-
       console.error("Remove artisan error:", err);
       res.status(500).json({ error: "Server error" });
-
     }
   }
 );
@@ -624,11 +599,9 @@ router.get(
   "/residencies/:id/template",
   authenticateUser,
   async (req, res) => {
-
     const { id } = req.params;
 
     try {
-
       const rules = await pool.query(`
         SELECT id, title, description, display_order
         FROM rules
@@ -671,15 +644,12 @@ router.get(
         info_items: info.rows,
         announcements: announcements.rows
       });
-
     } catch (err) {
-
       console.error("Manager KB fetch error:", err);
 
       res.status(500).json({
         error: "Failed to fetch knowledge base"
       });
-
     }
   }
 );
@@ -691,7 +661,6 @@ router.post(
   "/residencies/:id/announcements",
   authenticateUser,
   async (req, res) => {
-
     const { id } = req.params;
     const {
       title,
@@ -708,7 +677,6 @@ router.post(
     }
 
     try {
-
       const result = await pool.query(
         `
         INSERT INTO announcements
@@ -735,15 +703,12 @@ router.post(
       );
 
       res.status(201).json(result.rows[0]);
-
     } catch (err) {
-
       console.error("Create announcement error:", err);
 
       res.status(500).json({
         error: "Failed to create announcement"
       });
-
     }
   }
 );
