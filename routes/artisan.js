@@ -17,22 +17,24 @@ async function getArtisan(accessCode) {
 }
 
 /* =====================================================
-   HELPER: CHECK IF ANY LINKED RESIDENCY IS ARCHIVED
+   HELPER: CHECK IF A SPECIFIC JOB BELONGS TO
+   AN ARCHIVED RESIDENCY
 ===================================================== */
-async function isArtisanBlocked(artisanId) {
+async function isJobResidencyArchived(jobId) {
   const result = await pool.query(
     `
-    SELECT 1
-    FROM residency_artisans ra
-    JOIN residencies r ON r.id = ra.residency_id
-    WHERE ra.artisan_id = $1
-    AND r.is_archived = TRUE
+    SELECT r.is_archived
+    FROM maintenance_requests m
+    JOIN residencies r
+      ON r.id = m.residency_id
+    WHERE m.id = $1
     LIMIT 1
     `,
-    [artisanId]
+    [jobId]
   );
 
-  return result.rows.length > 0;
+  if (result.rows.length === 0) return true;
+  return result.rows[0].is_archived;
 }
 
 /* =====================================================
@@ -56,7 +58,6 @@ router.get("/:accessCode/profile", async (req, res) => {
     }
 
     res.json(result.rows[0]);
-
   } catch (err) {
     console.error("Artisan profile error:", err);
     res.status(500).json({ error: "Server error" });
@@ -74,13 +75,6 @@ router.get("/:accessCode/jobs", async (req, res) => {
 
     if (!artisan) {
       return res.status(404).json({ error: "Invalid artisan code" });
-    }
-
-    // 🔒 BLOCK IF ARCHIVED
-    if (await isArtisanBlocked(artisan.id)) {
-      return res.status(403).json({
-        error: "RESIDENCY_ARCHIVED"
-      });
     }
 
     const jobs = await pool.query(
@@ -110,6 +104,7 @@ router.get("/:accessCode/jobs", async (req, res) => {
 
       WHERE ra.artisan_id = $1
       AND m.status != 'cancelled'
+      AND COALESCE(r.is_archived, FALSE) = FALSE
 
       ORDER BY m.created_at DESC
       `,
@@ -117,7 +112,6 @@ router.get("/:accessCode/jobs", async (req, res) => {
     );
 
     res.json(jobs.rows);
-
   } catch (err) {
     console.error("Artisan jobs error:", err);
     res.status(500).json({ error: "Server error" });
@@ -137,8 +131,7 @@ router.put("/:accessCode/jobs/:jobId/claim", async (req, res) => {
       return res.status(404).json({ error: "Invalid artisan code" });
     }
 
-    // 🔒 BLOCK IF ARCHIVED
-    if (await isArtisanBlocked(artisan.id)) {
+    if (await isJobResidencyArchived(jobId)) {
       return res.status(403).json({
         error: "RESIDENCY_ARCHIVED"
       });
@@ -163,7 +156,6 @@ router.put("/:accessCode/jobs/:jobId/claim", async (req, res) => {
     }
 
     res.json(result.rows[0]);
-
   } catch (err) {
     console.error("Claim job error:", err);
     res.status(500).json({ error: "Server error" });
@@ -183,8 +175,7 @@ router.put("/:accessCode/jobs/:jobId/start", async (req, res) => {
       return res.status(404).json({ error: "Invalid artisan code" });
     }
 
-    // 🔒 BLOCK IF ARCHIVED
-    if (await isArtisanBlocked(artisan.id)) {
+    if (await isJobResidencyArchived(jobId)) {
       return res.status(403).json({
         error: "RESIDENCY_ARCHIVED"
       });
@@ -209,7 +200,6 @@ router.put("/:accessCode/jobs/:jobId/start", async (req, res) => {
     }
 
     res.json(result.rows[0]);
-
   } catch (err) {
     console.error("Start job error:", err);
     res.status(500).json({ error: "Server error" });
@@ -229,8 +219,7 @@ router.put("/:accessCode/jobs/:jobId/complete", async (req, res) => {
       return res.status(404).json({ error: "Invalid artisan code" });
     }
 
-    // 🔒 BLOCK IF ARCHIVED
-    if (await isArtisanBlocked(artisan.id)) {
+    if (await isJobResidencyArchived(jobId)) {
       return res.status(403).json({
         error: "RESIDENCY_ARCHIVED"
       });
@@ -255,7 +244,6 @@ router.put("/:accessCode/jobs/:jobId/complete", async (req, res) => {
     }
 
     res.json(result.rows[0]);
-
   } catch (err) {
     console.error("Complete job error:", err);
     res.status(500).json({ error: "Server error" });
