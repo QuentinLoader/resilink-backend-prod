@@ -3,16 +3,45 @@ import pool from "../config/db.js";
 
 export const router = express.Router();
 
-/* ===============================
-   GET ARTISAN PROFILE
-   GET /api/artisan/:accessCode/profile
-================================ */
+/* =====================================================
+   HELPER: GET ARTISAN
+===================================================== */
+async function getArtisan(accessCode) {
+  const result = await pool.query(
+    `SELECT id FROM artisans WHERE access_code = $1`,
+    [accessCode]
+  );
 
+  if (result.rows.length === 0) return null;
+  return result.rows[0];
+}
+
+/* =====================================================
+   HELPER: CHECK IF ANY LINKED RESIDENCY IS ARCHIVED
+===================================================== */
+async function isArtisanBlocked(artisanId) {
+  const result = await pool.query(
+    `
+    SELECT 1
+    FROM residency_artisans ra
+    JOIN residencies r ON r.id = ra.residency_id
+    WHERE ra.artisan_id = $1
+    AND r.is_archived = TRUE
+    LIMIT 1
+    `,
+    [artisanId]
+  );
+
+  return result.rows.length > 0;
+}
+
+/* =====================================================
+   GET ARTISAN PROFILE
+===================================================== */
 router.get("/:accessCode/profile", async (req, res) => {
   const { accessCode } = req.params;
 
   try {
-
     const result = await pool.query(
       `
       SELECT id, name, phone, trade
@@ -34,33 +63,25 @@ router.get("/:accessCode/profile", async (req, res) => {
   }
 });
 
-
-/* ===============================
+/* =====================================================
    GET ARTISAN JOBS
-   GET /api/artisan/:accessCode/jobs
-================================ */
-
+===================================================== */
 router.get("/:accessCode/jobs", async (req, res) => {
-
   const { accessCode } = req.params;
 
   try {
+    const artisan = await getArtisan(accessCode);
 
-    /* get artisan id */
-
-    const artisan = await pool.query(
-      `SELECT id FROM artisans WHERE access_code = $1`,
-      [accessCode]
-    );
-
-    if (artisan.rows.length === 0) {
+    if (!artisan) {
       return res.status(404).json({ error: "Invalid artisan code" });
     }
 
-    const artisanId = artisan.rows[0].id;
-
-
-    /* get jobs for residencies artisan belongs to */
+    // 🔒 BLOCK IF ARCHIVED
+    if (await isArtisanBlocked(artisan.id)) {
+      return res.status(403).json({
+        error: "RESIDENCY_ARCHIVED"
+      });
+    }
 
     const jobs = await pool.query(
       `
@@ -92,44 +113,36 @@ router.get("/:accessCode/jobs", async (req, res) => {
 
       ORDER BY m.created_at DESC
       `,
-      [artisanId]
+      [artisan.id]
     );
 
     res.json(jobs.rows);
 
   } catch (err) {
-
     console.error("Artisan jobs error:", err);
     res.status(500).json({ error: "Server error" });
-
   }
-
 });
-/* ===============================
+
+/* =====================================================
    CLAIM JOB
-   PUT /api/artisan/:accessCode/jobs/:jobId/claim
-================================ */
-
+===================================================== */
 router.put("/:accessCode/jobs/:jobId/claim", async (req, res) => {
-
   const { accessCode, jobId } = req.params;
 
   try {
+    const artisan = await getArtisan(accessCode);
 
-    /* find artisan */
-
-    const artisan = await pool.query(
-      `SELECT id FROM artisans WHERE access_code = $1`,
-      [accessCode]
-    );
-
-    if (artisan.rows.length === 0) {
+    if (!artisan) {
       return res.status(404).json({ error: "Invalid artisan code" });
     }
 
-    const artisanId = artisan.rows[0].id;
-
-    /* claim job */
+    // 🔒 BLOCK IF ARCHIVED
+    if (await isArtisanBlocked(artisan.id)) {
+      return res.status(403).json({
+        error: "RESIDENCY_ARCHIVED"
+      });
+    }
 
     const result = await pool.query(
       `
@@ -142,7 +155,7 @@ router.put("/:accessCode/jobs/:jobId/claim", async (req, res) => {
       AND artisan_id IS NULL
       RETURNING *
       `,
-      [artisanId, jobId]
+      [artisan.id, jobId]
     );
 
     if (result.rows.length === 0) {
@@ -152,33 +165,30 @@ router.put("/:accessCode/jobs/:jobId/claim", async (req, res) => {
     res.json(result.rows[0]);
 
   } catch (err) {
-
     console.error("Claim job error:", err);
     res.status(500).json({ error: "Server error" });
-
   }
-
 });
-/* ===============================
+
+/* =====================================================
    START JOB
-================================ */
-
+===================================================== */
 router.put("/:accessCode/jobs/:jobId/start", async (req, res) => {
-
   const { accessCode, jobId } = req.params;
 
   try {
+    const artisan = await getArtisan(accessCode);
 
-    const artisan = await pool.query(
-      `SELECT id FROM artisans WHERE access_code = $1`,
-      [accessCode]
-    );
-
-    if (artisan.rows.length === 0) {
+    if (!artisan) {
       return res.status(404).json({ error: "Invalid artisan code" });
     }
 
-    const artisanId = artisan.rows[0].id;
+    // 🔒 BLOCK IF ARCHIVED
+    if (await isArtisanBlocked(artisan.id)) {
+      return res.status(403).json({
+        error: "RESIDENCY_ARCHIVED"
+      });
+    }
 
     const result = await pool.query(
       `
@@ -191,7 +201,7 @@ router.put("/:accessCode/jobs/:jobId/start", async (req, res) => {
       AND status = 'claimed'
       RETURNING *
       `,
-      [jobId, artisanId]
+      [jobId, artisan.id]
     );
 
     if (result.rows.length === 0) {
@@ -201,34 +211,30 @@ router.put("/:accessCode/jobs/:jobId/start", async (req, res) => {
     res.json(result.rows[0]);
 
   } catch (err) {
-
     console.error("Start job error:", err);
     res.status(500).json({ error: "Server error" });
-
   }
-
 });
-/* ===============================
+
+/* =====================================================
    COMPLETE JOB
-   PUT /api/artisan/:accessCode/jobs/:jobId/complete
-================================ */
-
+===================================================== */
 router.put("/:accessCode/jobs/:jobId/complete", async (req, res) => {
-
   const { accessCode, jobId } = req.params;
 
   try {
+    const artisan = await getArtisan(accessCode);
 
-    const artisan = await pool.query(
-      `SELECT id FROM artisans WHERE access_code = $1`,
-      [accessCode]
-    );
-
-    if (artisan.rows.length === 0) {
+    if (!artisan) {
       return res.status(404).json({ error: "Invalid artisan code" });
     }
 
-    const artisanId = artisan.rows[0].id;
+    // 🔒 BLOCK IF ARCHIVED
+    if (await isArtisanBlocked(artisan.id)) {
+      return res.status(403).json({
+        error: "RESIDENCY_ARCHIVED"
+      });
+    }
 
     const result = await pool.query(
       `
@@ -241,7 +247,7 @@ router.put("/:accessCode/jobs/:jobId/complete", async (req, res) => {
       AND status = 'in_progress'
       RETURNING *
       `,
-      [jobId, artisanId]
+      [jobId, artisan.id]
     );
 
     if (result.rows.length === 0) {
@@ -251,10 +257,7 @@ router.put("/:accessCode/jobs/:jobId/complete", async (req, res) => {
     res.json(result.rows[0]);
 
   } catch (err) {
-
     console.error("Complete job error:", err);
     res.status(500).json({ error: "Server error" });
-
   }
-
 });
