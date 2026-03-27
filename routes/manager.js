@@ -572,4 +572,67 @@ router.get(
     }
   }
 );
+/* ===============================
+   CREATE ANNOUNCEMENT
+================================ */
+router.post(
+  "/residencies/:id/announcements",
+  authenticateUser,
+  async (req, res) => {
+
+    const { id } = req.params;
+    const {
+      title,
+      message,
+      start_date,
+      end_date,
+      is_active
+    } = req.body;
+
+    if (!title || !message) {
+      return res.status(400).json({
+        error: "Title and message are required"
+      });
+    }
+
+    try {
+
+      const result = await pool.query(
+        `
+        INSERT INTO announcements
+        (
+          residency_id,
+          title,
+          message,
+          start_date,
+          end_date,
+          is_active,
+          created_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,NOW())
+        RETURNING *
+        `,
+        [
+          id,
+          title,
+          message,
+          start_date || null,
+          end_date || null,
+          is_active ?? true
+        ]
+      );
+
+      res.status(201).json(result.rows[0]);
+
+    } catch (err) {
+
+      console.error("Create announcement error:", err);
+
+      res.status(500).json({
+        error: "Failed to create announcement"
+      });
+
+    }
+  }
+);
 export default router;
