@@ -256,37 +256,46 @@ router.get(
       let params = [id];
 
       if (status) {
-        statusFilter = "AND status = $2";
+        statusFilter = "AND m.status = $2";
         params.push(status);
       } else {
-        statusFilter = "AND status != 'cancelled'";
+        statusFilter = "AND m.status != 'cancelled'";
       }
 
       const result = await pool.query(
         `
         SELECT
-          id,
-          title,
-          category,
-          unit_number,
-          description,
-          priority,
-          status,
-          resident_name,
-          resident_phone,
-          preferred_date,
-          preferred_time,
-          scheduled_date,
-          scheduled_time,
-          cancel_reason,
-          cancelled_at,
-          cancelled_by,
-          created_at,
-          EXTRACT(EPOCH FROM (NOW() - created_at)) / 3600 AS job_age_hours
-        FROM maintenance_requests
-        WHERE residency_id = $1
+          m.id,
+          m.title,
+          m.category,
+          m.unit_number,
+          m.description,
+          m.priority,
+          m.status,
+          m.artisan_id,
+          a.name AS artisan_name,
+          a.phone AS artisan_phone,
+          a.trade AS artisan_trade,
+          m.claimed_at,
+          m.started_at,
+          m.completed_at,
+          m.resident_name,
+          m.resident_phone,
+          m.preferred_date,
+          m.preferred_time,
+          m.scheduled_date,
+          m.scheduled_time,
+          m.cancel_reason,
+          m.cancelled_at,
+          m.cancelled_by,
+          m.created_at,
+          EXTRACT(EPOCH FROM (NOW() - m.created_at)) / 3600 AS job_age_hours
+        FROM maintenance_requests m
+        LEFT JOIN artisans a
+          ON a.id = m.artisan_id
+        WHERE m.residency_id = $1
         ${statusFilter}
-        ORDER BY created_at DESC
+        ORDER BY m.created_at DESC
         `,
         params
       );
@@ -529,13 +538,10 @@ router.put(
           artisan_id = $1,
           scheduled_date = $2,
           scheduled_time = $3,
-
-          -- ownership + state reset
           status = 'claimed',
           claimed_at = NOW(),
           started_at = NULL,
           completed_at = NULL
-
         WHERE id = $4
         RETURNING *
         `,
