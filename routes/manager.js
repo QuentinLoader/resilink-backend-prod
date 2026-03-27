@@ -250,17 +250,6 @@ router.get(
   async (req, res) => {
     try {
       const { id } = req.params;
-      const { status } = req.query;
-
-      let statusFilter = "";
-      let params = [id];
-
-      if (status) {
-        statusFilter = "AND m.status = $2";
-        params.push(status);
-      } else {
-        statusFilter = "AND m.status != 'cancelled'";
-      }
 
       const result = await pool.query(
         `
@@ -294,10 +283,10 @@ router.get(
         LEFT JOIN artisans a
           ON a.id = m.artisan_id
         WHERE m.residency_id = $1
-        ${statusFilter}
+        AND (m.status IS NULL OR m.status != 'cancelled')
         ORDER BY m.created_at DESC
         `,
-        params
+        [id]
       );
 
       res.json(result.rows);
