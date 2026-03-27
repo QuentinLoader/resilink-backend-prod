@@ -115,6 +115,7 @@ router.post("/:accessCode/maintenance", async (req, res) => {
       INSERT INTO maintenance_requests
       (
         residency_id,
+        job_number,
         title,
         category,
         unit_number,
@@ -126,8 +127,21 @@ router.post("/:accessCode/maintenance", async (req, res) => {
         priority,
         status
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending')
-      RETURNING id
+      VALUES (
+        $1,
+        'RL-' || LPAD(nextval('maintenance_job_number_seq')::text, 6, '0'),
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7,
+        $8,
+        $9,
+        $10,
+        'pending'
+      )
+      RETURNING id, job_number
       `,
       [
         residency.id,
@@ -144,10 +158,12 @@ router.post("/:accessCode/maintenance", async (req, res) => {
     );
 
     const requestId = insert.rows[0].id;
+    const jobNumber = insert.rows[0].job_number;
 
     res.json({
       success: true,
-      request_id: requestId
+      request_id: requestId,
+      job_number: jobNumber
     });
   } catch (error) {
     console.error("Maintenance submission error:", error);
