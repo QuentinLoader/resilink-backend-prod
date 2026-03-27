@@ -56,20 +56,13 @@ export async function authenticateUser(req, res, next) {
       });
     }
 
+    const header = decodeProtectedHeader(token);
+    console.log("JWT header:", header);
+
     let payload;
-    let header = null;
 
-    try {
-      header = decodeProtectedHeader(token);
-      console.log("JWT header:", header);
-    } catch (e) {
-      console.error("Could not decode JWT header");
-      return res.status(401).json({
-        error: "Malformed token"
-      });
-    }
-
-    if (header.alg && header.alg.startsWith("RS")) {
+    // Asymmetric Supabase tokens: verify locally via JWKS
+    if (header.alg && (header.alg.startsWith("RS") || header.alg.startsWith("ES"))) {
       const verified = await jwtVerify(token, JWKS, {
         issuer: `${SUPABASE_PROJECT_URL}/auth/v1`,
         audience: "authenticated"
@@ -77,8 +70,9 @@ export async function authenticateUser(req, res, next) {
 
       payload = verified.payload;
     } else {
+      // Legacy/shared-secret tokens: verify through Supabase Auth server
       if (!SUPABASE_ANON_KEY) {
-        throw new Error("SUPABASE_ANON_KEY is required for HS256 token verification");
+        throw new Error("SUPABASE_ANON_KEY is required for legacy token verification");
       }
 
       payload = await verifyWithSupabaseAuthServer(token);
