@@ -81,6 +81,7 @@ router.get("/:accessCode/jobs", async (req, res) => {
       `
       SELECT
         m.id,
+        m.job_number,
         m.title,
         m.description,
         m.status,
