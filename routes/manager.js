@@ -255,6 +255,7 @@ router.get(
         `
         SELECT
           m.id,
+          m.job_number,
           m.title,
           m.category,
           m.unit_number,
@@ -483,6 +484,7 @@ router.get(
         `
         SELECT
           m.id,
+          m.job_number,
           m.title,
           m.description,
           m.status,
