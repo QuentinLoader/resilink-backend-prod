@@ -3,17 +3,9 @@ import { jwtVerify, createRemoteJWKSet, decodeProtectedHeader } from "jose";
 const SUPABASE_PROJECT_URL = "https://uxygywxiwkkaokbofvob.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
-/* =====================================================
-   SUPABASE JWKS (FOR ASYMMETRIC TOKENS ONLY)
-===================================================== */
-
 const JWKS = createRemoteJWKSet(
   new URL(`${SUPABASE_PROJECT_URL}/auth/v1/.well-known/jwks.json`)
 );
-
-/* =====================================================
-   VERIFY HS256 / LEGACY TOKENS VIA SUPABASE AUTH
-===================================================== */
 
 async function verifyWithSupabaseAuthServer(token) {
   const response = await fetch(`${SUPABASE_PROJECT_URL}/auth/v1/user`, {
@@ -25,6 +17,8 @@ async function verifyWithSupabaseAuthServer(token) {
   });
 
   if (!response.ok) {
+    const bodyText = await response.text().catch(() => "");
+    console.error("Supabase /auth/v1/user failed:", response.status, bodyText);
     throw new Error(`Supabase auth verification failed (${response.status})`);
   }
 
@@ -36,10 +30,6 @@ async function verifyWithSupabaseAuthServer(token) {
     role: user.role || "authenticated"
   };
 }
-
-/* =====================================================
-   AUTHENTICATE USER
-===================================================== */
 
 export async function authenticateUser(req, res, next) {
   try {
@@ -59,10 +49,26 @@ export async function authenticateUser(req, res, next) {
       });
     }
 
-    const header = decodeProtectedHeader(token);
-    let payload;
+    if (token === "undefined" || token === "null" || token.length < 20) {
+      console.error("Bad token received:", token);
+      return res.status(401).json({
+        error: "Invalid token format"
+      });
+    }
 
-    // RS256 / ES256 / other asymmetric algs → verify against JWKS
+    let payload;
+    let header = null;
+
+    try {
+      header = decodeProtectedHeader(token);
+      console.log("JWT header:", header);
+    } catch (e) {
+      console.error("Could not decode JWT header");
+      return res.status(401).json({
+        error: "Malformed token"
+      });
+    }
+
     if (header.alg && header.alg.startsWith("RS")) {
       const verified = await jwtVerify(token, JWKS, {
         issuer: `${SUPABASE_PROJECT_URL}/auth/v1`,
@@ -71,7 +77,6 @@ export async function authenticateUser(req, res, next) {
 
       payload = verified.payload;
     } else {
-      // HS256 / legacy shared-secret tokens → verify with Supabase Auth server
       if (!SUPABASE_ANON_KEY) {
         throw new Error("SUPABASE_ANON_KEY is required for HS256 token verification");
       }
