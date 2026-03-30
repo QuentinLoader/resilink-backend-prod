@@ -16,7 +16,7 @@ function generateAccessCode() {
    Helper: Normalize Artisan Phone
 ================================ */
 function normalizePhone(phone = "") {
-  return String(phone).trim().replace(/\s+/g, "");
+  return String(phone).replace(/\D/g, "");
 }
 
 /* ===============================
@@ -412,7 +412,7 @@ router.post(
 
     if (!name || !surname || !phone) {
       return res.status(400).json({
-        error: "Name and phone are required"
+        error: "Name, surname and phone are required"
       });
     }
 
@@ -440,7 +440,7 @@ router.post(
 
         artisanResult = await pool.query(
           `
-          INSERT INTO artisans (name, surname,phone, trade, access_code)
+          INSERT INTO artisans (name, surname, phone, trade, access_code)
           VALUES ($1,$2,$3,$4,$5)
           RETURNING *
           `,
