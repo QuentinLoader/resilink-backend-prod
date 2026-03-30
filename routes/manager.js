@@ -2,7 +2,10 @@ import express from "express";
 import pool from "../config/db.js";
 import { authenticateUser } from "../middleware/auth.js";
 import crypto from "crypto";
-import { startManagerTrialIfEligible } from "../utils/planTrial.js";
+import {
+  startManagerTrialIfEligible,
+  getManagerSubscriptionBySupabaseUserId
+} from "../utils/planTrial.js";
 
 const router = express.Router();
 
@@ -55,46 +58,16 @@ async function managerHasResidencyAccess(managerDbId, residencyId) {
 ================================ */
 router.get("/subscription", authenticateUser, async (req, res) => {
   try {
-    const result = await pool.query(
-      `
-      SELECT
-        id,
-        plan_code,
-        trial_ends_at
-      FROM managers
-      WHERE supabase_user_id = $1
-      LIMIT 1
-      `,
-      [req.user.id]
-    );
+    const subscription = await getManagerSubscriptionBySupabaseUserId(req.user.id);
 
-    if (result.rows.length === 0) {
+    if (!subscription) {
       return res.status(404).json({ error: "Manager not found" });
     }
 
-    const manager = result.rows[0];
-    const now = new Date();
-    const trialEndsAt = manager.trial_ends_at ? new Date(manager.trial_ends_at) : null;
-
-    let plan = "Free";
-    let daysRemaining = null;
-
-    const trialActive = trialEndsAt && trialEndsAt > now;
-
-    if (manager.plan_code === "PRO") {
-      plan = "Pro";
-    } else if (trialActive) {
-      plan = "Trial";
-      daysRemaining = Math.max(
-        0,
-        Math.ceil((trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-      );
-    }
-
     return res.json({
-      plan,
-      trial_ends_at: manager.trial_ends_at,
-      days_remaining: daysRemaining
+      plan: subscription.plan,
+      trial_ends_at: subscription.trial_ends_at,
+      days_remaining: subscription.days_remaining
     });
   } catch (error) {
     console.error("Get subscription error:", error);
