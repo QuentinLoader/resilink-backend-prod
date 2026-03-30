@@ -471,7 +471,48 @@ router.post(
     }
   }
 );
+/* ===============================
+   SEARCH ARTISANS (GLOBAL)
+================================ */
+router.get(
+  "/artisans/search",
+  authenticateUser,
+  async (req, res) => {
+    const q = String(req.query.q || "").trim();
 
+    if (!q) {
+      return res.json([]);
+    }
+
+    try {
+      const searchValue = `%${q}%`;
+
+      const result = await pool.query(
+        `
+        SELECT
+          id,
+          name,
+          phone,
+          trade,
+          access_code
+        FROM artisans
+        WHERE
+          name ILIKE $1
+          OR phone ILIKE $1
+          OR trade ILIKE $1
+        ORDER BY name ASC
+        LIMIT 20
+        `,
+        [searchValue]
+      );
+
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Search artisans error:", err);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
 /* ===============================
    LIST ARTISANS
 ================================ */
