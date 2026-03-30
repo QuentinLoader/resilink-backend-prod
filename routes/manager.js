@@ -50,7 +50,57 @@ async function managerHasResidencyAccess(managerDbId, residencyId) {
 
   return result.rows.length > 0;
 }
+/* ===============================
+   GET MANAGER SUBSCRIPTION
+================================ */
+router.get("/subscription", authenticateUser, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        id,
+        plan_code,
+        trial_ends_at
+      FROM managers
+      WHERE supabase_user_id = $1
+      LIMIT 1
+      `,
+      [req.user.id]
+    );
 
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Manager not found" });
+    }
+
+    const manager = result.rows[0];
+    const now = new Date();
+    const trialEndsAt = manager.trial_ends_at ? new Date(manager.trial_ends_at) : null;
+
+    let plan = "Free";
+    let daysRemaining = null;
+
+    const trialActive = trialEndsAt && trialEndsAt > now;
+
+    if (manager.plan_code === "PRO") {
+      plan = "Pro";
+    } else if (trialActive) {
+      plan = "Trial";
+      daysRemaining = Math.max(
+        0,
+        Math.ceil((trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+      );
+    }
+
+    return res.json({
+      plan,
+      trial_ends_at: manager.trial_ends_at,
+      days_remaining: daysRemaining
+    });
+  } catch (error) {
+    console.error("Get subscription error:", error);
+    return res.status(500).json({ error: "Failed to fetch subscription" });
+  }
+});
 /* ===============================
    GET MANAGER RESIDENCIES
 ================================ */
