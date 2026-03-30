@@ -119,3 +119,41 @@ export async function getManagerAccountStateBySupabaseUserId(
     features
   };
 }
+
+export async function requireManagerFeature(
+  supabaseUserId,
+  featureKey,
+  client = pool
+) {
+  const account = await getManagerAccountStateBySupabaseUserId(
+    supabaseUserId,
+    client
+  );
+
+  if (!account) {
+    return {
+      ok: false,
+      status: 404,
+      body: { error: "Manager not found" }
+    };
+  }
+
+  if (!account.features?.[featureKey]) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: "PLAN_UPGRADE_REQUIRED",
+        feature: featureKey,
+        plan: account.plan,
+        trial_active: account.trial_active,
+        trial_ends_at: account.trial_ends_at
+      }
+    };
+  }
+
+  return {
+    ok: true,
+    account
+  };
+}

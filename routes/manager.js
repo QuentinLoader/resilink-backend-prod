@@ -4,7 +4,8 @@ import { authenticateUser } from "../middleware/auth.js";
 import crypto from "crypto";
 import {
   startManagerTrialIfEligible,
-  getManagerAccountStateBySupabaseUserId
+  getManagerAccountStateBySupabaseUserId,
+  requireManagerFeature
 } from "../utils/planTrial.js";
 
 const router = express.Router();
@@ -153,6 +154,30 @@ router.post("/residencies", authenticateUser, async (req, res) => {
     if (!managerDbId) {
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "Manager not found" });
+    }
+
+    const accountGate = await getManagerAccountStateBySupabaseUserId(
+      req.user.id,
+      client
+    );
+
+    if (!accountGate) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Manager not found" });
+    }
+
+    if (
+      !accountGate.features.can_create_multiple_residencies &&
+      accountGate.residency_count >= 1
+    ) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({
+        error: "PLAN_UPGRADE_REQUIRED",
+        feature: "can_create_multiple_residencies",
+        plan: accountGate.plan,
+        trial_active: accountGate.trial_active,
+        trial_ends_at: accountGate.trial_ends_at
+      });
     }
 
     let accessCode;
@@ -361,6 +386,15 @@ router.put(
   async (req, res) => {
     try {
       const { id } = req.params;
+
+      const gate = await requireManagerFeature(
+        req.user.id,
+        "can_schedule_maintenance"
+      );
+
+      if (!gate.ok) {
+        return res.status(gate.status).json(gate.body);
+      }
 
       const {
         scheduled_date,
@@ -746,6 +780,15 @@ router.put(
     }
 
     try {
+      const gate = await requireManagerFeature(
+        req.user.id,
+        "can_assign_artisans"
+      );
+
+      if (!gate.ok) {
+        return res.status(gate.status).json(gate.body);
+      }
+
       const result = await pool.query(
         `
         UPDATE maintenance_requests
