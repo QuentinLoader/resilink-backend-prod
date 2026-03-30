@@ -14,7 +14,12 @@ export async function sendEmail({ to, subject, html }) {
     html
   });
 
-  console.log("Resend sendEmail response:", response);
+  if (response.error) {
+    console.error("Resend error:", response.error);
+    throw new Error(response.error.message || "Resend failed");
+  }
+
+  console.log("Email sent:", response);
 
   return response;
 }
