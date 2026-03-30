@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import cron from "node-cron";
 
 import { enforceSafeMode } from "./middleware/safeMode.js";
 
@@ -11,9 +12,9 @@ import residentMaintenanceRoutes from "./routes/resident.maintenance.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 import { router as artisanRoutes } from "./routes/artisan.js";
 import { router as residentKnowledge } from "./routes/residentKnowledge.js";
+import { runTrialNotifications } from "./jobs/trialNotifications.js";
 
 const app = express();
-
 
 /* =========================================
    Core Middleware
@@ -67,13 +68,6 @@ app.use("/api/manager", managerRoutes);
 app.use("/api/manager", managerMaintenanceRoutes);
 
 /* =========================================
-   Manager Dashboard
-========================================= */
-
-app.use("/api/manager", managerRoutes);
-app.use("/api/manager", managerMaintenanceRoutes);
-
-/* =========================================
    Artisan Portal
 ========================================= */
 
@@ -84,6 +78,21 @@ app.use("/api/artisan", artisanRoutes);
 ========================================= */
 
 app.use("/api/resident", residentKnowledge);
+
+/* =========================================
+   Daily Trial Notification Job
+========================================= */
+
+// Runs every day at 08:00 server time
+cron.schedule("0 8 * * *", async () => {
+  try {
+    console.log("Running trial notification job...");
+    await runTrialNotifications();
+    console.log("Trial notification job completed");
+  } catch (error) {
+    console.error("Trial notification job failed:", error);
+  }
+});
 
 /* =========================================
    Start Server
