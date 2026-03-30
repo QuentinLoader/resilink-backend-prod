@@ -14,5 +14,7 @@ export async function sendEmail({ to, subject, html }) {
     html
   });
 
+  console.log("Resend sendEmail response:", response);
+
   return response;
 }
