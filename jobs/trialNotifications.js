@@ -55,17 +55,15 @@ export async function runTrialNotifications() {
   try {
     const { rows } = await client.query(`
       SELECT
-        m.id,
-        m.trial_ends_at,
-        m.trial_notify_7d_sent_at,
-        m.trial_notify_1d_sent_at,
-        m.trial_expired_notified_at,
-        u.email,
-        COALESCE(u.full_name, u.name, '') AS full_name
-      FROM managers m
-      LEFT JOIN users u
-        ON u.id = m.user_id
-      WHERE m.trial_ends_at IS NOT NULL
+        id,
+        email,
+        full_name,
+        trial_ends_at,
+        trial_notify_7d_sent_at,
+        trial_notify_1d_sent_at,
+        trial_expired_notified_at
+      FROM managers
+      WHERE trial_ends_at IS NOT NULL
     `);
 
     const now = new Date();
