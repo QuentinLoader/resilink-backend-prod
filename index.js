@@ -11,8 +11,10 @@ import residentMaintenanceRoutes from "./routes/resident.maintenance.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 import { router as artisanRoutes } from "./routes/artisan.js";
 import { router as residentKnowledge } from "./routes/residentKnowledge.js";
+import internalRoutes from "./routes/internal.js";
 
 const app = express();
+
 
 /* =========================================
    Core Middleware
@@ -44,6 +46,12 @@ app.use("/api/whatsapp", whatsappRoutes);
 ========================================= */
 
 app.use(enforceSafeMode);
+
+/* =========================================
+   Internal Routes
+========================================= */
+
+app.use("/api/internal", internalRoutes);
 
 /* =========================================
    Public Routes
