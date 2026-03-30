@@ -516,6 +516,51 @@ router.get(
   }
 );
 /* ===============================
+   EDIT ARTISAN
+================================ */
+router.put(
+  "/artisans/:id",
+  authenticateUser,
+  async (req, res) => {
+    const { id } = req.params;
+    const { name, surname, trade } = req.body;
+
+    if (!name || !surname) {
+      return res.status(400).json({
+        error: "Name and surname are required"
+      });
+    }
+
+    try {
+      const result = await pool.query(
+        `
+        UPDATE artisans
+        SET
+          name = $1,
+          surname = $2,
+          trade = $3
+        WHERE id = $4
+        RETURNING *
+        `,
+        [name, surname, trade || null, id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Artisan not found" });
+      }
+
+      res.json({
+        success: true,
+        artisan: result.rows[0]
+      });
+    } catch (err) {
+      console.error("Edit artisan error:", err);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+
+/* ===============================
    LIST ARTISANS
 ================================ */
 router.get(
