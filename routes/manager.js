@@ -2,6 +2,7 @@ import express from "express";
 import pool from "../config/db.js";
 import { authenticateUser } from "../middleware/auth.js";
 import crypto from "crypto";
+import { startManagerTrialIfEligible } from "../utils/planTrial.js";
 
 const router = express.Router();
 
@@ -408,7 +409,7 @@ router.post(
   authenticateUser,
   async (req, res) => {
     const { id } = req.params;
-    const { name, surname,phone, trade } = req.body;
+    const { name, surname, phone, trade } = req.body;
 
     if (!name || !surname || !phone) {
       return res.status(400).json({
@@ -416,10 +417,47 @@ router.post(
       });
     }
 
+    const client = await pool.connect();
+
     try {
+      await client.query("BEGIN");
+
+      const managerResult = await client.query(
+        `
+        SELECT id
+        FROM managers
+        WHERE supabase_user_id = $1
+        LIMIT 1
+        `,
+        [req.user.id]
+      );
+
+      const managerDbId = managerResult.rows[0]?.id;
+
+      if (!managerDbId) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "Manager not found" });
+      }
+
+      const hasAccessResult = await client.query(
+        `
+        SELECT 1
+        FROM manager_residencies
+        WHERE manager_id = $1
+          AND residency_id = $2
+        LIMIT 1
+        `,
+        [managerDbId, id]
+      );
+
+      if (hasAccessResult.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ error: "Access denied" });
+      }
+
       const normalizedPhone = normalizePhone(phone);
 
-      let artisanResult = await pool.query(
+      let artisanResult = await client.query(
         `
         SELECT *
         FROM artisans
@@ -438,39 +476,55 @@ router.post(
       } else {
         const accessCode = crypto.randomBytes(4).toString("hex");
 
-        artisanResult = await pool.query(
+        artisanResult = await client.query(
           `
           INSERT INTO artisans (name, surname, phone, trade, access_code)
-          VALUES ($1,$2,$3,$4,$5)
+          VALUES ($1, $2, $3, $4, $5)
           RETURNING *
           `,
-          [name, surname,normalizedPhone, trade || null, accessCode]
+          [name, surname, normalizedPhone, trade || null, accessCode]
         );
 
         artisan = artisanResult.rows[0];
         mode = "created_new";
       }
 
-      await pool.query(
+      const linkResult = await client.query(
         `
         INSERT INTO residency_artisans (residency_id, artisan_id)
-        VALUES ($1,$2)
+        VALUES ($1, $2)
         ON CONFLICT (residency_id, artisan_id) DO NOTHING
+        RETURNING residency_id, artisan_id
         `,
         [id, artisan.id]
       );
 
+      let trialStarted = null;
+
+      if (linkResult.rowCount > 0) {
+        trialStarted = await startManagerTrialIfEligible(managerDbId, client);
+      }
+
+      await client.query("COMMIT");
+
       res.json({
         success: true,
         mode,
-        artisan
+        artisan,
+        newly_linked: linkResult.rowCount > 0,
+        trial_started: !!trialStarted,
+        trial_ends_at: trialStarted?.trial_ends_at ?? null
       });
     } catch (err) {
+      await client.query("ROLLBACK");
       console.error("Create/link artisan error:", err);
       res.status(500).json({ error: "Server error" });
+    } finally {
+      client.release();
     }
   }
 );
+
 /* ===============================
    SEARCH ARTISANS (GLOBAL)
 ================================ */
@@ -515,6 +569,7 @@ router.get(
     }
   }
 );
+
 /* ===============================
    EDIT ARTISAN
 ================================ */
@@ -725,40 +780,55 @@ router.get(
     const { id } = req.params;
 
     try {
-      const rules = await pool.query(`
+      const rules = await pool.query(
+        `
         SELECT id, title, description, display_order
         FROM rules
         WHERE residency_id = $1
         ORDER BY display_order
-      `, [id]);
+        `,
+        [id]
+      );
 
-      const faqs = await pool.query(`
+      const faqs = await pool.query(
+        `
         SELECT id, question, answer, display_order
         FROM faqs
         WHERE residency_id = $1
         ORDER BY display_order
-      `, [id]);
+        `,
+        [id]
+      );
 
-      const contacts = await pool.query(`
+      const contacts = await pool.query(
+        `
         SELECT id, name, phone, email, description
         FROM emergency_contacts
         WHERE residency_id = $1
         ORDER BY name
-      `, [id]);
+        `,
+        [id]
+      );
 
-      const info = await pool.query(`
+      const info = await pool.query(
+        `
         SELECT id, category, title, content, display_order
         FROM info_items
         WHERE residency_id = $1
         ORDER BY category, display_order
-      `, [id]);
+        `,
+        [id]
+      );
 
-      const announcements = await pool.query(`
+      const announcements = await pool.query(
+        `
         SELECT id, title, message, start_date, end_date
         FROM announcements
         WHERE residency_id = $1
         ORDER BY created_at DESC
-      `, [id]);
+        `,
+        [id]
+      );
 
       res.json({
         rules: rules.rows,
@@ -812,7 +882,7 @@ router.post(
           is_active,
           created_at
         )
-        VALUES ($1,$2,$3,$4,$5,$6,NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
         RETURNING *
         `,
         [
