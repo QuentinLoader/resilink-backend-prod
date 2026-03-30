@@ -13,6 +13,13 @@ function generateAccessCode() {
 }
 
 /* ===============================
+   Helper: Normalize Artisan Phone
+================================ */
+function normalizePhone(phone = "") {
+  return String(phone).trim().replace(/\s+/g, "");
+}
+
+/* ===============================
    Helper: Get internal manager ID
 ================================ */
 async function getManagerDbId(supabaseUserId) {
@@ -394,7 +401,7 @@ router.put(
 );
 
 /* ===============================
-   CREATE ARTISAN
+   CREATE OR LINK ARTISAN
 ================================ */
 router.post(
   "/residencies/:id/artisans",
@@ -403,33 +410,63 @@ router.post(
     const { id } = req.params;
     const { name, phone, trade } = req.body;
 
-    if (!name) {
-      return res.status(400).json({ error: "Name is required" });
+    if (!name || !phone) {
+      return res.status(400).json({
+        error: "Name and phone are required"
+      });
     }
 
     try {
-      const accessCode = crypto.randomBytes(4).toString("hex");
+      const normalizedPhone = normalizePhone(phone);
 
-      const artisan = await pool.query(
+      let artisanResult = await pool.query(
         `
-        INSERT INTO artisans (name, phone, trade, access_code)
-        VALUES ($1,$2,$3,$4)
-        RETURNING *
+        SELECT *
+        FROM artisans
+        WHERE phone = $1
+        LIMIT 1
         `,
-        [name, phone, trade, accessCode]
+        [normalizedPhone]
       );
+
+      let artisan;
+      let mode;
+
+      if (artisanResult.rows.length > 0) {
+        artisan = artisanResult.rows[0];
+        mode = "linked_existing";
+      } else {
+        const accessCode = crypto.randomBytes(4).toString("hex");
+
+        artisanResult = await pool.query(
+          `
+          INSERT INTO artisans (name, phone, trade, access_code)
+          VALUES ($1,$2,$3,$4)
+          RETURNING *
+          `,
+          [name, normalizedPhone, trade || null, accessCode]
+        );
+
+        artisan = artisanResult.rows[0];
+        mode = "created_new";
+      }
 
       await pool.query(
         `
         INSERT INTO residency_artisans (residency_id, artisan_id)
         VALUES ($1,$2)
+        ON CONFLICT (residency_id, artisan_id) DO NOTHING
         `,
-        [id, artisan.rows[0].id]
+        [id, artisan.id]
       );
 
-      res.json(artisan.rows[0]);
+      res.json({
+        success: true,
+        mode,
+        artisan
+      });
     } catch (err) {
-      console.error("Create artisan error:", err);
+      console.error("Create/link artisan error:", err);
       res.status(500).json({ error: "Server error" });
     }
   }
