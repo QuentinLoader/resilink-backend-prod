@@ -4,7 +4,7 @@ import { authenticateUser } from "../middleware/auth.js";
 import crypto from "crypto";
 import {
   startManagerTrialIfEligible,
-  getManagerSubscriptionBySupabaseUserId
+  getManagerAccountStateBySupabaseUserId
 } from "../utils/planTrial.js";
 
 const router = express.Router();
@@ -53,27 +53,47 @@ async function managerHasResidencyAccess(managerDbId, residencyId) {
 
   return result.rows.length > 0;
 }
+
 /* ===============================
    GET MANAGER SUBSCRIPTION
 ================================ */
 router.get("/subscription", authenticateUser, async (req, res) => {
   try {
-    const subscription = await getManagerSubscriptionBySupabaseUserId(req.user.id);
+    const account = await getManagerAccountStateBySupabaseUserId(req.user.id);
 
-    if (!subscription) {
+    if (!account) {
       return res.status(404).json({ error: "Manager not found" });
     }
 
     return res.json({
-      plan: subscription.plan,
-      trial_ends_at: subscription.trial_ends_at,
-      days_remaining: subscription.days_remaining
+      plan: account.plan,
+      trial_ends_at: account.trial_ends_at,
+      days_remaining: account.days_remaining
     });
   } catch (error) {
     console.error("Get subscription error:", error);
     return res.status(500).json({ error: "Failed to fetch subscription" });
   }
 });
+
+/* ===============================
+   GET MANAGER ACCOUNT STATE
+================================ */
+router.get("/account", authenticateUser, async (req, res) => {
+  try {
+    const account = await getManagerAccountStateBySupabaseUserId(req.user.id);
+
+    if (!account) {
+      return res.status(404).json({ error: "Manager not found" });
+    }
+
+    return res.json(account);
+  } catch (error) {
+    console.error("Get account state error:", error);
+    return res.status(500).json({ error: "Failed to fetch account state" });
+  }
+});
+
 /* ===============================
    GET MANAGER RESIDENCIES
 ================================ */

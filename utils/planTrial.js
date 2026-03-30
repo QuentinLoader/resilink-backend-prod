@@ -25,6 +25,20 @@ export function isTrialActive(trialEndsAt) {
   return end > new Date();
 }
 
+export function buildManagerFeatures({ planCode, trialActive }) {
+  const isPaid = planCode === "PRO";
+  const hasMaintenanceProAccess = isPaid || trialActive;
+
+  return {
+    can_create_multiple_residencies: isPaid,
+    can_manage_maintenance_workflow: hasMaintenanceProAccess,
+    can_assign_artisans: hasMaintenanceProAccess,
+    can_schedule_maintenance: hasMaintenanceProAccess,
+    can_send_notifications: isPaid,
+    can_remove_branding: isPaid
+  };
+}
+
 export async function startManagerTrialIfEligible(managerId, client = pool) {
   if (!managerId) return null;
 
@@ -45,7 +59,7 @@ export async function startManagerTrialIfEligible(managerId, client = pool) {
   return result.rows[0] || null;
 }
 
-export async function getManagerSubscriptionBySupabaseUserId(
+export async function getManagerAccountStateBySupabaseUserId(
   supabaseUserId,
   client = pool
 ) {
@@ -54,13 +68,17 @@ export async function getManagerSubscriptionBySupabaseUserId(
   const result = await client.query(
     `
     SELECT
-      id,
-      plan_code,
-      trial_started_at,
-      trial_ends_at,
-      has_used_trial
-    FROM managers
-    WHERE supabase_user_id = $1
+      m.id,
+      m.plan_code,
+      m.trial_started_at,
+      m.trial_ends_at,
+      m.has_used_trial,
+      COUNT(mr.residency_id)::int AS residency_count
+    FROM managers m
+    LEFT JOIN manager_residencies mr
+      ON mr.manager_id = m.id
+    WHERE m.supabase_user_id = $1
+    GROUP BY m.id, m.plan_code, m.trial_started_at, m.trial_ends_at, m.has_used_trial
     LIMIT 1
     `,
     [supabaseUserId]
@@ -77,12 +95,16 @@ export async function getManagerSubscriptionBySupabaseUserId(
     : null;
 
   let plan = "Free";
-
   if (manager.plan_code === "PRO") {
     plan = "Pro";
   } else if (trialActive) {
     plan = "Trial";
   }
+
+  const features = buildManagerFeatures({
+    planCode: manager.plan_code,
+    trialActive
+  });
 
   return {
     manager_id: manager.id,
@@ -92,6 +114,8 @@ export async function getManagerSubscriptionBySupabaseUserId(
     trial_ends_at: manager.trial_ends_at,
     has_used_trial: manager.has_used_trial,
     trial_active: trialActive,
-    days_remaining: daysRemaining
+    days_remaining: daysRemaining,
+    residency_count: manager.residency_count,
+    features
   };
 }
