@@ -408,9 +408,9 @@ router.post(
   authenticateUser,
   async (req, res) => {
     const { id } = req.params;
-    const { name, phone, trade } = req.body;
+    const { name, surname,phone, trade } = req.body;
 
-    if (!name || !phone) {
+    if (!name || !surname || !phone) {
       return res.status(400).json({
         error: "Name and phone are required"
       });
@@ -440,11 +440,11 @@ router.post(
 
         artisanResult = await pool.query(
           `
-          INSERT INTO artisans (name, phone, trade, access_code)
-          VALUES ($1,$2,$3,$4)
+          INSERT INTO artisans (name, surname,phone, trade, access_code)
+          VALUES ($1,$2,$3,$4,$5)
           RETURNING *
           `,
-          [name, normalizedPhone, trade || null, accessCode]
+          [name, surname,normalizedPhone, trade || null, accessCode]
         );
 
         artisan = artisanResult.rows[0];
@@ -492,12 +492,14 @@ router.get(
         SELECT
           id,
           name,
+          surname,
           phone,
           trade,
           access_code
         FROM artisans
         WHERE
           name ILIKE $1
+          OR surname ILIKE $1
           OR phone ILIKE $1
           OR trade ILIKE $1
         ORDER BY name ASC
@@ -528,6 +530,7 @@ router.get(
         SELECT
           a.id,
           a.name,
+          a.surname,
           a.phone,
           a.trade,
           a.access_code
