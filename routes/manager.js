@@ -228,6 +228,51 @@ router.post("/residencies", authenticateUser, async (req, res) => {
 });
 
 /* ===============================
+   UPDATE RESIDENCY NAME
+================================ */
+router.put("/residencies/:id", authenticateUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const trimmedName = String(req.body?.name || "").trim();
+
+    if (!trimmedName) {
+      return res.status(400).json({ error: "Name is required" });
+    }
+
+    const managerDbId = await getManagerDbId(req.user.id);
+
+    if (!managerDbId) {
+      return res.status(404).json({ error: "Manager not found" });
+    }
+
+    const hasAccess = await managerHasResidencyAccess(managerDbId, id);
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE residencies
+      SET name = $1
+      WHERE id = $2
+      RETURNING id, name, property_type, access_code, is_archived, archived_at, created_at
+      `,
+      [trimmedName, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Residency not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Update residency name error:", error);
+    res.status(500).json({ error: "Failed to update residency" });
+  }
+});
+
+/* ===============================
    ARCHIVE RESIDENCY
 ================================ */
 router.put("/residencies/:id/archive", authenticateUser, async (req, res) => {
