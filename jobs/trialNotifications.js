@@ -1,5 +1,6 @@
 import pool from "../config/db.js";
 import { sendEmail } from "../utils/mailer.js";
+import { SUPPORT_EMAIL } from "../utils/planTrial.js";
 
 function daysDiff(a, b) {
   return Math.ceil((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
@@ -18,8 +19,8 @@ function buildSoonHtml({ name, endsAt }) {
   return `
     <p>Hi ${name || "there"},</p>
     <p>Your <b>ResLink Pro trial</b> ends on <b>${formatDate(endsAt)}</b>.</p>
-    <p>After expiry, you can still view requests, but you won’t be able to assign artisans, schedule visits, or manage job workflow.</p>
-    <p><a href="${process.env.APP_URL}/dashboard">Upgrade to keep full access</a></p>
+    <p>If you do not upgrade, your ResLink manager workspace and resident portal will pause when the trial ends. Your data will be retained.</p>
+    <p><a href="${process.env.APP_URL}/dashboard">Upgrade to keep full access</a></p>\n    <p>Need help? Contact <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>.</p>
   `;
 }
 
