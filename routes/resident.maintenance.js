@@ -1,6 +1,7 @@
 import express from "express";
 import pool from "../config/db.js";
 import { authenticateUser } from "../middleware/auth.js";
+import { requireResidencyOperationalAccess } from "../middleware/commercialAccess.js";
 
 const router = express.Router();
 
@@ -37,6 +38,10 @@ router.post("/", authenticateUser, async (req, res) => {
     const resident = residentResult.rows[0];
     const residentId = resident.id;
     const residencyId = resident.residency_id;
+
+    if (!(await requireResidencyOperationalAccess(residencyId, res))) {
+      return;
+    }
 
     // 2️⃣ If property provided, validate it belongs to same residency
     if (property_id) {
