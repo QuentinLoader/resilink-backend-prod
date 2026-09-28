@@ -1,5 +1,6 @@
 import express from "express";
 import pool from "../config/db.js";
+import { requireResidencyOperationalAccess } from "../middleware/commercialAccess.js";
 
 export const router = express.Router();
 
@@ -46,6 +47,10 @@ router.get("/:accessCode/info", async (req, res) => {
       return res.status(403).json({
         error: "RESIDENCY_ARCHIVED"
       });
+    }
+
+    if (!(await requireResidencyOperationalAccess(residency.id, res))) {
+      return;
     }
 
     res.json({
@@ -106,6 +111,10 @@ router.post("/:accessCode/maintenance", async (req, res) => {
       return res.status(403).json({
         error: "RESIDENCY_ARCHIVED"
       });
+    }
+
+    if (!(await requireResidencyOperationalAccess(residency.id, res))) {
+      return;
     }
 
     const title = `${category} - Unit ${unit_number}`;
