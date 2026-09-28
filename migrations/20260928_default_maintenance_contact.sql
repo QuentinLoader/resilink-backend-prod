@@ -38,3 +38,22 @@ SET default_artisan_id = single_link.artisan_id
 FROM single_link
 WHERE r.id = single_link.residency_id
   AND r.default_artisan_id IS NULL;
+
+-- Assign existing open, unassigned requests only where a default contact now exists.
+-- Pending requests become claimed; any other non-terminal status is preserved.
+UPDATE maintenance_requests m
+SET
+  artisan_id = r.default_artisan_id,
+  status = CASE
+    WHEN m.status = 'pending' OR m.status IS NULL THEN 'claimed'
+    ELSE m.status
+  END,
+  claimed_at = CASE
+    WHEN m.status = 'pending' OR m.status IS NULL THEN COALESCE(m.claimed_at, NOW())
+    ELSE m.claimed_at
+  END
+FROM residencies r
+WHERE m.residency_id = r.id
+  AND r.default_artisan_id IS NOT NULL
+  AND m.artisan_id IS NULL
+  AND COALESCE(m.status, 'pending') NOT IN ('completed', 'cancelled');
