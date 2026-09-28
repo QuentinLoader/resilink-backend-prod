@@ -9,7 +9,7 @@ export const router = express.Router();
 async function getResidencyFromAccessCode(accessCode) {
   const result = await pool.query(
     `
-    SELECT id, is_archived
+    SELECT id, name, is_archived
     FROM residencies
     WHERE access_code = $1
     LIMIT 1
@@ -95,6 +95,7 @@ router.get("/:accessCode/template", async (req, res) => {
 
     res.json({
       residency_id: residencyId,
+      residency_name: residency.name,
       rules: rules.rows,
       faqs: faqs.rows,
       emergency_contacts: contacts.rows,

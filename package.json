@@ -4,7 +4,9 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "check": "node --check index.js && node --check routes/manager.js && node --check routes/residentKnowledge.js",
+    "test:kb": "node --test test/knowledgeBase.contract.test.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

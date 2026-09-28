@@ -911,9 +911,21 @@ router.get(
     const { id } = req.params;
 
     try {
+      const managerDbId = await getManagerDbId(req.user.id);
+
+      if (!managerDbId) {
+        return res.status(404).json({ error: "Manager not found" });
+      }
+
+      const hasAccess = await managerHasResidencyAccess(managerDbId, id);
+
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Residency access denied" });
+      }
+
       const rules = await pool.query(
         `
-        SELECT id, title, description, display_order
+        SELECT id, title, description, display_order, is_active
         FROM rules
         WHERE residency_id = $1
         ORDER BY display_order
@@ -923,7 +935,7 @@ router.get(
 
       const faqs = await pool.query(
         `
-        SELECT id, question, answer, display_order
+        SELECT id, question, answer, display_order, is_active
         FROM faqs
         WHERE residency_id = $1
         ORDER BY display_order
@@ -933,7 +945,7 @@ router.get(
 
       const contacts = await pool.query(
         `
-        SELECT id, name, phone, email, description
+        SELECT id, name, phone, email, description, is_active
         FROM emergency_contacts
         WHERE residency_id = $1
         ORDER BY name
@@ -943,7 +955,7 @@ router.get(
 
       const info = await pool.query(
         `
-        SELECT id, category, title, content, display_order
+        SELECT id, category, title, content, display_order, is_active
         FROM info_items
         WHERE residency_id = $1
         ORDER BY category, display_order
@@ -953,7 +965,7 @@ router.get(
 
       const announcements = await pool.query(
         `
-        SELECT id, title, message, start_date, end_date
+        SELECT id, title, message, start_date, end_date, is_active
         FROM announcements
         WHERE residency_id = $1
         ORDER BY created_at DESC
@@ -974,6 +986,191 @@ router.get(
       res.status(500).json({
         error: "Failed to fetch knowledge base"
       });
+    }
+  }
+);
+
+/* =========================================================
+   FAQ CRUD (MANAGER VIEW)
+========================================================= */
+router.post(
+  "/residencies/:id/faqs",
+  authenticateUser,
+  async (req, res) => {
+    const { id } = req.params;
+    const question = String(req.body?.question ?? "").trim();
+    const answer = String(req.body?.answer ?? "").trim();
+    const displayOrder = Number.isFinite(Number(req.body?.display_order))
+      ? Number(req.body.display_order)
+      : 0;
+    const isActive = req.body?.is_active ?? true;
+
+    if (!question || !answer) {
+      return res.status(400).json({
+        error: "Question and answer are required"
+      });
+    }
+
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({ error: "is_active must be a boolean" });
+    }
+
+    try {
+      const managerDbId = await getManagerDbId(req.user.id);
+
+      if (!managerDbId) {
+        return res.status(404).json({ error: "Manager not found" });
+      }
+
+      const hasAccess = await managerHasResidencyAccess(managerDbId, id);
+
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Residency access denied" });
+      }
+
+      const result = await pool.query(
+        `
+        INSERT INTO faqs
+          (residency_id, question, answer, display_order, is_active)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, question, answer, display_order, is_active
+        `,
+        [id, question, answer, displayOrder, isActive]
+      );
+
+      return res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error("Create FAQ error:", err);
+      return res.status(500).json({ error: "Failed to create FAQ" });
+    }
+  }
+);
+
+router.patch(
+  "/residencies/:id/faqs/:faqId",
+  authenticateUser,
+  async (req, res) => {
+    const { id, faqId } = req.params;
+    const updates = [];
+    const values = [];
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "question")) {
+      const question = String(req.body.question ?? "").trim();
+      if (!question) {
+        return res.status(400).json({ error: "Question cannot be blank" });
+      }
+      values.push(question);
+      updates.push(`question = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "answer")) {
+      const answer = String(req.body.answer ?? "").trim();
+      if (!answer) {
+        return res.status(400).json({ error: "Answer cannot be blank" });
+      }
+      values.push(answer);
+      updates.push(`answer = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "display_order")) {
+      const displayOrder = Number(req.body.display_order);
+      if (!Number.isFinite(displayOrder)) {
+        return res.status(400).json({ error: "display_order must be a number" });
+      }
+      values.push(displayOrder);
+      updates.push(`display_order = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "is_active")) {
+      if (typeof req.body.is_active !== "boolean") {
+        return res.status(400).json({ error: "is_active must be a boolean" });
+      }
+      values.push(req.body.is_active);
+      updates.push(`is_active = $${values.length}`);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No valid FAQ fields supplied" });
+    }
+
+    try {
+      const managerDbId = await getManagerDbId(req.user.id);
+
+      if (!managerDbId) {
+        return res.status(404).json({ error: "Manager not found" });
+      }
+
+      const hasAccess = await managerHasResidencyAccess(managerDbId, id);
+
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Residency access denied" });
+      }
+
+      values.push(faqId);
+      const faqIdParam = values.length;
+      values.push(id);
+      const residencyIdParam = values.length;
+
+      const result = await pool.query(
+        `
+        UPDATE faqs
+        SET ${updates.join(", ")}
+        WHERE id = $${faqIdParam}
+          AND residency_id = $${residencyIdParam}
+        RETURNING id, question, answer, display_order, is_active
+        `,
+        values
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "FAQ not found" });
+      }
+
+      return res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Update FAQ error:", err);
+      return res.status(500).json({ error: "Failed to update FAQ" });
+    }
+  }
+);
+
+router.delete(
+  "/residencies/:id/faqs/:faqId",
+  authenticateUser,
+  async (req, res) => {
+    const { id, faqId } = req.params;
+
+    try {
+      const managerDbId = await getManagerDbId(req.user.id);
+
+      if (!managerDbId) {
+        return res.status(404).json({ error: "Manager not found" });
+      }
+
+      const hasAccess = await managerHasResidencyAccess(managerDbId, id);
+
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Residency access denied" });
+      }
+
+      const result = await pool.query(
+        `
+        DELETE FROM faqs
+        WHERE id = $1
+          AND residency_id = $2
+        RETURNING id
+        `,
+        [faqId, id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "FAQ not found" });
+      }
+
+      return res.json({ success: true });
+    } catch (err) {
+      console.error("Delete FAQ error:", err);
+      return res.status(500).json({ error: "Failed to delete FAQ" });
     }
   }
 );
