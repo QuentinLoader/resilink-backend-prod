@@ -1,5 +1,6 @@
 import express from "express";
 import pool from "../config/db.js";
+import { requireResidencyOperationalAccess } from "../middleware/commercialAccess.js";
 
 export const router = express.Router();
 
@@ -39,6 +40,10 @@ router.get("/:accessCode/template", async (req, res) => {
       return res.status(403).json({
         error: "RESIDENCY_ARCHIVED"
       });
+    }
+
+    if (!(await requireResidencyOperationalAccess(residency.id, res))) {
+      return;
     }
 
     const residencyId = residency.id;
@@ -136,6 +141,10 @@ router.get("/:accessCode/template/search", async (req, res) => {
       });
     }
 
+    if (!(await requireResidencyOperationalAccess(residency.id, res))) {
+      return;
+    }
+
     const residencyId = residency.id;
     const search = `%${q}%`;
 
@@ -215,6 +224,10 @@ router.get("/residencies/:id/knowledge", async (req, res) => {
   const { id } = req.params;
 
   try {
+    if (!(await requireResidencyOperationalAccess(id, res))) {
+      return;
+    }
+
     const rules = await pool.query(
       `
       SELECT id, title, description, display_order
@@ -294,6 +307,10 @@ router.get("/residencies/:id/knowledge/search", async (req, res) => {
   }
 
   try {
+    if (!(await requireResidencyOperationalAccess(id, res))) {
+      return;
+    }
+
     const search = `%${q}%`;
 
     const rules = await pool.query(
