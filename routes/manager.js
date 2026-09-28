@@ -143,10 +143,18 @@ router.get("/residencies", authenticateUser, async (req, res) => {
         r.access_code,
         r.is_archived,
         r.archived_at,
-        r.created_at
+        r.created_at,
+        r.default_artisan_id,
+        da.name AS default_artisan_name,
+        da.surname AS default_artisan_surname,
+        da.phone AS default_artisan_phone,
+        da.trade AS default_artisan_trade,
+        da.access_code AS default_artisan_access_code
       FROM residencies r
       JOIN manager_residencies mr
         ON mr.residency_id = r.id
+      LEFT JOIN artisans da
+        ON da.id = r.default_artisan_id
       WHERE mr.manager_id = $1
       ORDER BY r.created_at DESC;
       `,
@@ -299,6 +307,116 @@ router.put("/residencies/:id", authenticateUser, async (req, res) => {
     res.status(500).json({ error: "Failed to update residency" });
   }
 });
+
+/* ===============================
+   SET DEFAULT MAINTENANCE CONTACT
+================================ */
+router.put(
+  "/residencies/:id/default-artisan",
+  authenticateUser,
+  async (req, res) => {
+    const { id } = req.params;
+    const { artisan_id } = req.body;
+
+    if (!artisan_id) {
+      return res.status(400).json({ error: "artisan_id required" });
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const managerDbId = await getManagerDbId(req.user.id);
+
+      if (!managerDbId) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "Manager not found" });
+      }
+
+      const hasAccess = await client.query(
+        `
+        SELECT 1
+        FROM manager_residencies
+        WHERE manager_id = $1
+          AND residency_id = $2
+        LIMIT 1
+        `,
+        [managerDbId, id]
+      );
+
+      if (hasAccess.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const artisanResult = await client.query(
+        `
+        SELECT id, name, surname, phone, trade, access_code
+        FROM artisans
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [artisan_id]
+      );
+
+      if (artisanResult.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "Artisan not found" });
+      }
+
+      await client.query(
+        `
+        INSERT INTO residency_artisans (residency_id, artisan_id)
+        VALUES ($1, $2)
+        ON CONFLICT (residency_id, artisan_id) DO NOTHING
+        `,
+        [id, artisan_id]
+      );
+
+      await client.query(
+        `
+        UPDATE residencies
+        SET default_artisan_id = $1
+        WHERE id = $2
+        `,
+        [artisan_id, id]
+      );
+
+      const autoAssigned = await client.query(
+        `
+        UPDATE maintenance_requests
+        SET
+          artisan_id = $1,
+          status = CASE WHEN status = 'pending' OR status IS NULL THEN 'claimed' ELSE status END,
+          claimed_at = CASE
+            WHEN status = 'pending' OR status IS NULL THEN COALESCE(claimed_at, NOW())
+            ELSE claimed_at
+          END
+        WHERE residency_id = $2
+          AND artisan_id IS NULL
+          AND COALESCE(status, 'pending') NOT IN ('completed', 'cancelled')
+        RETURNING id
+        `,
+        [artisan_id, id]
+      );
+
+      await client.query("COMMIT");
+
+      return res.json({
+        success: true,
+        default_artisan: artisanResult.rows[0],
+        auto_assigned_count: autoAssigned.rowCount
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error("Set default artisan error:", error);
+      return res.status(500).json({ error: "Failed to set maintenance contact" });
+    } finally {
+      client.release();
+    }
+  }
+);
 
 /* ===============================
    ARCHIVE RESIDENCY
@@ -783,12 +901,17 @@ router.get(
           a.surname,
           a.phone,
           a.trade,
-          a.access_code
+          a.access_code,
+          (r.default_artisan_id = a.id) AS is_default
         FROM artisans a
         JOIN residency_artisans ra
-        ON ra.artisan_id = a.id
+          ON ra.artisan_id = a.id
+        JOIN residencies r
+          ON r.id = ra.residency_id
         WHERE ra.residency_id = $1
-        ORDER BY a.name
+        ORDER BY
+          (r.default_artisan_id = a.id) DESC,
+          a.name
         `,
         [id]
       );
@@ -906,6 +1029,26 @@ router.delete(
     const { residencyId, artisanId } = req.params;
 
     try {
+      const defaultCheck = await pool.query(
+        `
+        SELECT default_artisan_id
+        FROM residencies
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [residencyId]
+      );
+
+      if (
+        defaultCheck.rows[0]?.default_artisan_id &&
+        String(defaultCheck.rows[0].default_artisan_id) === String(artisanId)
+      ) {
+        return res.status(409).json({
+          error: "DEFAULT_MAINTENANCE_CONTACT",
+          message: "Choose another maintenance contact before removing this artisan"
+        });
+      }
+
       const result = await pool.query(
         `
         DELETE FROM residency_artisans
