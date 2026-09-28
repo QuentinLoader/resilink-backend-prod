@@ -8,8 +8,9 @@
     "check": "node --check index.js && node --check routes/manager.js && node --check routes/manager.maintenance.js && node --check routes/public.js && node --check routes/resident.js && node --check routes/resident.maintenance.js && node --check routes/residentKnowledge.js && node --check routes/artisan.js && node --check routes/admin.js && node --check middleware/commercialAccess.js && node --check utils/planTrial.js && node --check jobs/trialNotifications.js",
     "test:kb": "node --test test/knowledgeBase.contract.test.mjs",
     "test:commercial": "node --test test/commercialAccess.contract.test.mjs",
-    "test": "npm run test:kb && npm run test:commercial && npm run test:maintenance-contact",
-    "test:maintenance-contact": "node --test test/defaultMaintenanceContact.contract.test.mjs"
+    "test": "npm run test:kb && npm run test:commercial && npm run test:maintenance-contact && npm run test:maintenance-status",
+    "test:maintenance-contact": "node --test test/defaultMaintenanceContact.contract.test.mjs",
+    "test:maintenance-status": "node --test test/maintenanceStatus.contract.test.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
