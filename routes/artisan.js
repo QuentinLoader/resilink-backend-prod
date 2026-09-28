@@ -97,13 +97,10 @@ router.get("/:accessCode/jobs", async (req, res) => {
 
       FROM maintenance_requests m
 
-      JOIN residency_artisans ra
-        ON ra.residency_id = m.residency_id
-
       LEFT JOIN residencies r
         ON r.id = m.residency_id
 
-      WHERE ra.artisan_id = $1
+      WHERE m.artisan_id = $1
       AND m.status != 'cancelled'
       AND COALESCE(r.is_archived, FALSE) = FALSE
 
