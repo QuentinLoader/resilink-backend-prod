@@ -11,7 +11,7 @@ export const router = express.Router();
 async function getResidencyFromAccessCode(accessCode) {
   const result = await pool.query(
     `
-    SELECT id, name, access_code, is_archived, archived_at
+    SELECT id, name, access_code, is_archived, archived_at, default_artisan_id
     FROM residencies
     WHERE access_code = $1
     LIMIT 1
@@ -134,7 +134,9 @@ router.post("/:accessCode/maintenance", async (req, res) => {
         preferred_date,
         preferred_time,
         priority,
-        status
+        status,
+        artisan_id,
+        claimed_at
       )
       VALUES (
         $1,
@@ -148,7 +150,9 @@ router.post("/:accessCode/maintenance", async (req, res) => {
         $8,
         $9,
         $10,
-        'pending'
+        CASE WHEN $11::uuid IS NULL THEN 'pending' ELSE 'claimed' END,
+        $11,
+        CASE WHEN $11::uuid IS NULL THEN NULL ELSE NOW() END
       )
       RETURNING id, job_number
       `,
@@ -162,7 +166,8 @@ router.post("/:accessCode/maintenance", async (req, res) => {
         resident_phone,
         preferred_date || null,
         preferred_time || null,
-        priority || "normal"
+        priority || "normal",
+        residency.default_artisan_id || null
       ]
     );
 
