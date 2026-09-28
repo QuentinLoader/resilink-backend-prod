@@ -551,7 +551,6 @@ router.get(
         LEFT JOIN artisans a
           ON a.id = m.artisan_id
         WHERE m.residency_id = $1
-        AND (m.status IS NULL OR m.status != 'cancelled')
         ORDER BY m.created_at DESC
         `,
         [id]
