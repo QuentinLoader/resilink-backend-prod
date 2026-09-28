@@ -56,6 +56,27 @@ async function managerHasResidencyAccess(managerDbId, residencyId) {
 }
 
 /* ===============================
+   Helper: Enforce manager residency access
+================================ */
+async function requireManagerResidencyAccessForRequest(req, res, residencyId) {
+  const managerDbId = await getManagerDbId(req.user.id);
+
+  if (!managerDbId) {
+    res.status(404).json({ error: "Manager not found" });
+    return false;
+  }
+
+  const hasAccess = await managerHasResidencyAccess(managerDbId, residencyId);
+
+  if (!hasAccess) {
+    res.status(403).json({ error: "Residency access denied" });
+    return false;
+  }
+
+  return true;
+}
+
+/* ===============================
    GET MANAGER SUBSCRIPTION
 ================================ */
 router.get("/subscription", authenticateUser, async (req, res) => {
@@ -1175,61 +1196,607 @@ router.delete(
   }
 );
 
-/* ===============================
-   CREATE ANNOUNCEMENT
-================================ */
+/* =========================================================
+   RULE CRUD (MANAGER VIEW)
+========================================================= */
+router.post(
+  "/residencies/:id/rules",
+  authenticateUser,
+  async (req, res) => {
+    const { id } = req.params;
+    const title = String(req.body?.title ?? "").trim();
+    const description = String(req.body?.description ?? "").trim();
+    const displayOrder = Number.isFinite(Number(req.body?.display_order))
+      ? Number(req.body.display_order)
+      : 0;
+    const isActive = req.body?.is_active ?? true;
+
+    if (!title || !description) {
+      return res.status(400).json({ error: "Title and description are required" });
+    }
+
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({ error: "is_active must be a boolean" });
+    }
+
+    try {
+      if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
+      const result = await pool.query(
+        `
+        INSERT INTO rules
+          (residency_id, title, description, display_order, is_active)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, title, description, display_order, is_active
+        `,
+        [id, title, description, displayOrder, isActive]
+      );
+
+      return res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error("Create rule error:", err);
+      return res.status(500).json({ error: "Failed to create rule" });
+    }
+  }
+);
+
+router.patch(
+  "/residencies/:id/rules/:ruleId",
+  authenticateUser,
+  async (req, res) => {
+    const { id, ruleId } = req.params;
+    const updates = [];
+    const values = [];
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "title")) {
+      const title = String(req.body.title ?? "").trim();
+      if (!title) return res.status(400).json({ error: "Title cannot be blank" });
+      values.push(title);
+      updates.push(`title = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "description")) {
+      const description = String(req.body.description ?? "").trim();
+      if (!description) return res.status(400).json({ error: "Description cannot be blank" });
+      values.push(description);
+      updates.push(`description = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "display_order")) {
+      const displayOrder = Number(req.body.display_order);
+      if (!Number.isFinite(displayOrder)) {
+        return res.status(400).json({ error: "display_order must be a number" });
+      }
+      values.push(displayOrder);
+      updates.push(`display_order = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "is_active")) {
+      if (typeof req.body.is_active !== "boolean") {
+        return res.status(400).json({ error: "is_active must be a boolean" });
+      }
+      values.push(req.body.is_active);
+      updates.push(`is_active = $${values.length}`);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No valid rule fields supplied" });
+    }
+
+    try {
+      if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
+      values.push(ruleId);
+      const ruleIdParam = values.length;
+      values.push(id);
+      const residencyIdParam = values.length;
+
+      const result = await pool.query(
+        `
+        UPDATE rules
+        SET ${updates.join(", ")}
+        WHERE id = $${ruleIdParam}
+          AND residency_id = $${residencyIdParam}
+        RETURNING id, title, description, display_order, is_active
+        `,
+        values
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Rule not found" });
+      }
+
+      return res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Update rule error:", err);
+      return res.status(500).json({ error: "Failed to update rule" });
+    }
+  }
+);
+
+router.delete(
+  "/residencies/:id/rules/:ruleId",
+  authenticateUser,
+  async (req, res) => {
+    const { id, ruleId } = req.params;
+
+    try {
+      if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
+      const result = await pool.query(
+        `
+        DELETE FROM rules
+        WHERE id = $1
+          AND residency_id = $2
+        RETURNING id
+        `,
+        [ruleId, id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Rule not found" });
+      }
+
+      return res.json({ success: true });
+    } catch (err) {
+      console.error("Delete rule error:", err);
+      return res.status(500).json({ error: "Failed to delete rule" });
+    }
+  }
+);
+
+/* =========================================================
+   EMERGENCY CONTACT CRUD (MANAGER VIEW)
+========================================================= */
+router.post(
+  "/residencies/:id/emergency-contacts",
+  authenticateUser,
+  async (req, res) => {
+    const { id } = req.params;
+    const name = String(req.body?.name ?? "").trim();
+    const phone = String(req.body?.phone ?? "").trim();
+    const email = String(req.body?.email ?? "").trim() || null;
+    const description = String(req.body?.description ?? "").trim() || null;
+    const isActive = req.body?.is_active ?? true;
+
+    if (!name || !phone) {
+      return res.status(400).json({ error: "Name and phone are required" });
+    }
+
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({ error: "is_active must be a boolean" });
+    }
+
+    try {
+      if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
+      const result = await pool.query(
+        `
+        INSERT INTO emergency_contacts
+          (residency_id, name, phone, email, description, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, name, phone, email, description, is_active
+        `,
+        [id, name, phone, email, description, isActive]
+      );
+
+      return res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error("Create emergency contact error:", err);
+      return res.status(500).json({ error: "Failed to create emergency contact" });
+    }
+  }
+);
+
+router.patch(
+  "/residencies/:id/emergency-contacts/:contactId",
+  authenticateUser,
+  async (req, res) => {
+    const { id, contactId } = req.params;
+    const updates = [];
+    const values = [];
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "name")) {
+      const name = String(req.body.name ?? "").trim();
+      if (!name) return res.status(400).json({ error: "Name cannot be blank" });
+      values.push(name);
+      updates.push(`name = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "phone")) {
+      const phone = String(req.body.phone ?? "").trim();
+      if (!phone) return res.status(400).json({ error: "Phone cannot be blank" });
+      values.push(phone);
+      updates.push(`phone = $${values.length}`);
+    }
+
+    for (const field of ["email", "description"]) {
+      if (Object.prototype.hasOwnProperty.call(req.body ?? {}, field)) {
+        const value = String(req.body[field] ?? "").trim() || null;
+        values.push(value);
+        updates.push(`${field} = $${values.length}`);
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "is_active")) {
+      if (typeof req.body.is_active !== "boolean") {
+        return res.status(400).json({ error: "is_active must be a boolean" });
+      }
+      values.push(req.body.is_active);
+      updates.push(`is_active = $${values.length}`);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No valid emergency contact fields supplied" });
+    }
+
+    try {
+      if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
+      values.push(contactId);
+      const contactIdParam = values.length;
+      values.push(id);
+      const residencyIdParam = values.length;
+
+      const result = await pool.query(
+        `
+        UPDATE emergency_contacts
+        SET ${updates.join(", ")}
+        WHERE id = $${contactIdParam}
+          AND residency_id = $${residencyIdParam}
+        RETURNING id, name, phone, email, description, is_active
+        `,
+        values
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Emergency contact not found" });
+      }
+
+      return res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Update emergency contact error:", err);
+      return res.status(500).json({ error: "Failed to update emergency contact" });
+    }
+  }
+);
+
+router.delete(
+  "/residencies/:id/emergency-contacts/:contactId",
+  authenticateUser,
+  async (req, res) => {
+    const { id, contactId } = req.params;
+
+    try {
+      if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
+      const result = await pool.query(
+        `
+        DELETE FROM emergency_contacts
+        WHERE id = $1
+          AND residency_id = $2
+        RETURNING id
+        `,
+        [contactId, id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Emergency contact not found" });
+      }
+
+      return res.json({ success: true });
+    } catch (err) {
+      console.error("Delete emergency contact error:", err);
+      return res.status(500).json({ error: "Failed to delete emergency contact" });
+    }
+  }
+);
+
+/* =========================================================
+   INFO ITEM CRUD (SECURITY / ESTATE INFO)
+========================================================= */
+router.post(
+  "/residencies/:id/info-items",
+  authenticateUser,
+  async (req, res) => {
+    const { id } = req.params;
+    const category = String(req.body?.category ?? "").trim();
+    const title = String(req.body?.title ?? "").trim();
+    const content = String(req.body?.content ?? "").trim();
+    const displayOrder = Number.isFinite(Number(req.body?.display_order))
+      ? Number(req.body.display_order)
+      : 0;
+    const isActive = req.body?.is_active ?? true;
+
+    if (!category || !title || !content) {
+      return res.status(400).json({ error: "Category, title and content are required" });
+    }
+
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({ error: "is_active must be a boolean" });
+    }
+
+    try {
+      if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
+      const result = await pool.query(
+        `
+        INSERT INTO info_items
+          (residency_id, category, title, content, display_order, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, category, title, content, display_order, is_active
+        `,
+        [id, category, title, content, displayOrder, isActive]
+      );
+
+      return res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error("Create info item error:", err);
+      return res.status(500).json({ error: "Failed to create info item" });
+    }
+  }
+);
+
+router.patch(
+  "/residencies/:id/info-items/:infoItemId",
+  authenticateUser,
+  async (req, res) => {
+    const { id, infoItemId } = req.params;
+    const updates = [];
+    const values = [];
+
+    for (const field of ["category", "title", "content"]) {
+      if (Object.prototype.hasOwnProperty.call(req.body ?? {}, field)) {
+        const value = String(req.body[field] ?? "").trim();
+        if (!value) return res.status(400).json({ error: `${field} cannot be blank` });
+        values.push(value);
+        updates.push(`${field} = $${values.length}`);
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "display_order")) {
+      const displayOrder = Number(req.body.display_order);
+      if (!Number.isFinite(displayOrder)) {
+        return res.status(400).json({ error: "display_order must be a number" });
+      }
+      values.push(displayOrder);
+      updates.push(`display_order = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "is_active")) {
+      if (typeof req.body.is_active !== "boolean") {
+        return res.status(400).json({ error: "is_active must be a boolean" });
+      }
+      values.push(req.body.is_active);
+      updates.push(`is_active = $${values.length}`);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No valid info item fields supplied" });
+    }
+
+    try {
+      if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
+      values.push(infoItemId);
+      const infoItemIdParam = values.length;
+      values.push(id);
+      const residencyIdParam = values.length;
+
+      const result = await pool.query(
+        `
+        UPDATE info_items
+        SET ${updates.join(", ")}
+        WHERE id = $${infoItemIdParam}
+          AND residency_id = $${residencyIdParam}
+        RETURNING id, category, title, content, display_order, is_active
+        `,
+        values
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Info item not found" });
+      }
+
+      return res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Update info item error:", err);
+      return res.status(500).json({ error: "Failed to update info item" });
+    }
+  }
+);
+
+router.delete(
+  "/residencies/:id/info-items/:infoItemId",
+  authenticateUser,
+  async (req, res) => {
+    const { id, infoItemId } = req.params;
+
+    try {
+      if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
+      const result = await pool.query(
+        `
+        DELETE FROM info_items
+        WHERE id = $1
+          AND residency_id = $2
+        RETURNING id
+        `,
+        [infoItemId, id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Info item not found" });
+      }
+
+      return res.json({ success: true });
+    } catch (err) {
+      console.error("Delete info item error:", err);
+      return res.status(500).json({ error: "Failed to delete info item" });
+    }
+  }
+);
+
+/* =========================================================
+   ANNOUNCEMENT CRUD (MANAGER VIEW)
+========================================================= */
 router.post(
   "/residencies/:id/announcements",
   authenticateUser,
   async (req, res) => {
     const { id } = req.params;
-    const {
-      title,
-      message,
-      start_date,
-      end_date,
-      is_active
-    } = req.body;
+    const title = String(req.body?.title ?? "").trim();
+    const message = String(req.body?.message ?? "").trim();
+    const startDate = req.body?.start_date || null;
+    const endDate = req.body?.end_date || null;
+    const isActive = req.body?.is_active ?? true;
 
     if (!title || !message) {
-      return res.status(400).json({
-        error: "Title and message are required"
-      });
+      return res.status(400).json({ error: "Title and message are required" });
+    }
+
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({ error: "is_active must be a boolean" });
+    }
+
+    if (startDate && endDate && String(endDate) < String(startDate)) {
+      return res.status(400).json({ error: "end_date cannot be before start_date" });
     }
 
     try {
+      if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
       const result = await pool.query(
         `
         INSERT INTO announcements
-        (
-          residency_id,
-          title,
-          message,
-          start_date,
-          end_date,
-          is_active,
-          created_at
-        )
+          (residency_id, title, message, start_date, end_date, is_active, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, NOW())
-        RETURNING *
+        RETURNING id, title, message, start_date, end_date, is_active
         `,
-        [
-          id,
-          title,
-          message,
-          start_date || null,
-          end_date || null,
-          is_active ?? true
-        ]
+        [id, title, message, startDate, endDate, isActive]
       );
 
-      res.status(201).json(result.rows[0]);
+      return res.status(201).json(result.rows[0]);
     } catch (err) {
       console.error("Create announcement error:", err);
+      return res.status(500).json({ error: "Failed to create announcement" });
+    }
+  }
+);
 
-      res.status(500).json({
-        error: "Failed to create announcement"
-      });
+router.patch(
+  "/residencies/:id/announcements/:announcementId",
+  authenticateUser,
+  async (req, res) => {
+    const { id, announcementId } = req.params;
+    const updates = [];
+    const values = [];
+
+    for (const field of ["title", "message"]) {
+      if (Object.prototype.hasOwnProperty.call(req.body ?? {}, field)) {
+        const value = String(req.body[field] ?? "").trim();
+        if (!value) return res.status(400).json({ error: `${field} cannot be blank` });
+        values.push(value);
+        updates.push(`${field} = $${values.length}`);
+      }
+    }
+
+    for (const field of ["start_date", "end_date"]) {
+      if (Object.prototype.hasOwnProperty.call(req.body ?? {}, field)) {
+        values.push(req.body[field] || null);
+        updates.push(`${field} = $${values.length}`);
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "is_active")) {
+      if (typeof req.body.is_active !== "boolean") {
+        return res.status(400).json({ error: "is_active must be a boolean" });
+      }
+      values.push(req.body.is_active);
+      updates.push(`is_active = $${values.length}`);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No valid announcement fields supplied" });
+    }
+
+    const nextStart = Object.prototype.hasOwnProperty.call(req.body ?? {}, "start_date")
+      ? req.body.start_date || null
+      : null;
+    const nextEnd = Object.prototype.hasOwnProperty.call(req.body ?? {}, "end_date")
+      ? req.body.end_date || null
+      : null;
+
+    if (nextStart && nextEnd && String(nextEnd) < String(nextStart)) {
+      return res.status(400).json({ error: "end_date cannot be before start_date" });
+    }
+
+    try {
+      if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
+      values.push(announcementId);
+      const announcementIdParam = values.length;
+      values.push(id);
+      const residencyIdParam = values.length;
+
+      const result = await pool.query(
+        `
+        UPDATE announcements
+        SET ${updates.join(", ")}
+        WHERE id = $${announcementIdParam}
+          AND residency_id = $${residencyIdParam}
+        RETURNING id, title, message, start_date, end_date, is_active
+        `,
+        values
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Announcement not found" });
+      }
+
+      if (
+        result.rows[0].start_date &&
+        result.rows[0].end_date &&
+        result.rows[0].end_date < result.rows[0].start_date
+      ) {
+        return res.status(400).json({ error: "end_date cannot be before start_date" });
+      }
+
+      return res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Update announcement error:", err);
+      return res.status(500).json({ error: "Failed to update announcement" });
+    }
+  }
+);
+
+router.delete(
+  "/residencies/:id/announcements/:announcementId",
+  authenticateUser,
+  async (req, res) => {
+    const { id, announcementId } = req.params;
+
+    try {
+      if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
+      const result = await pool.query(
+        `
+        DELETE FROM announcements
+        WHERE id = $1
+          AND residency_id = $2
+        RETURNING id
+        `,
+        [announcementId, id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Announcement not found" });
+      }
+
+      return res.json({ success: true });
+    } catch (err) {
+      console.error("Delete announcement error:", err);
+      return res.status(500).json({ error: "Failed to delete announcement" });
     }
   }
 );
