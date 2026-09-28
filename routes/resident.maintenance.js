@@ -23,8 +23,13 @@ router.post("/", authenticateUser, async (req, res) => {
     // 1️⃣ Get resident by supabase_user_id
     const residentResult = await pool.query(
       `
-      SELECT id, residency_id
+      SELECT
+        residents.id,
+        residents.residency_id,
+        residencies.default_artisan_id
       FROM residents
+      JOIN residencies
+        ON residencies.id = residents.residency_id
       WHERE supabase_user_id = $1
       LIMIT 1
       `,
@@ -67,9 +72,29 @@ router.post("/", authenticateUser, async (req, res) => {
     const result = await pool.query(
       `
       INSERT INTO maintenance_requests
-        (title, description, priority, status, resident_id, residency_id, property_id)
+        (
+          title,
+          description,
+          priority,
+          status,
+          resident_id,
+          residency_id,
+          property_id,
+          artisan_id,
+          claimed_at
+        )
       VALUES
-        ($1, $2, $3, 'pending', $4, $5, $6)
+        (
+          $1,
+          $2,
+          $3,
+          CASE WHEN $7::uuid IS NULL THEN 'pending' ELSE 'claimed' END,
+          $4,
+          $5,
+          $6,
+          $7,
+          CASE WHEN $7::uuid IS NULL THEN NULL ELSE NOW() END
+        )
       RETURNING *;
       `,
       [
@@ -79,6 +104,7 @@ router.post("/", authenticateUser, async (req, res) => {
         residentId,
         residencyId,
         property_id || null,
+        resident.default_artisan_id || null,
       ]
     );
 
