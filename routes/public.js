@@ -20,7 +20,7 @@ function formatDate(value) {
 }
 
 router.post("/register-manager", authenticateUser, async (req, res) => {
-  const { residency_name, property_type } = req.body;
+  const { full_name, residency_name, property_type } = req.body;
 
   const supabaseUserId = req.user.id;
   const email = req.user.email;
@@ -39,13 +39,15 @@ router.post("/register-manager", authenticateUser, async (req, res) => {
 
     const managerResult = await client.query(
       `
-      INSERT INTO managers (supabase_user_id, email)
-      VALUES ($1, $2)
+      INSERT INTO managers (supabase_user_id, email, full_name)
+      VALUES ($1, $2, $3)
       ON CONFLICT (supabase_user_id)
-      DO UPDATE SET email = EXCLUDED.email
+      DO UPDATE SET
+        email = EXCLUDED.email,
+        full_name = COALESCE(NULLIF(EXCLUDED.full_name, ''), managers.full_name)
       RETURNING id
       `,
-      [supabaseUserId, email]
+      [supabaseUserId, email, String(full_name || "").trim() || null]
     );
 
     const managerDbId = managerResult.rows[0].id;
