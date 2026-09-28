@@ -16,6 +16,10 @@ test("migration adds a nullable default maintenance contact and only safe single
   assert.match(migrationSource, /REFERENCES artisans\(id\)/);
   assert.match(migrationSource, /ON DELETE SET NULL/);
   assert.match(migrationSource, /HAVING COUNT\(\*\) = 1/);
+  assert.match(migrationSource, /UPDATE maintenance_requests m/);
+  assert.match(migrationSource, /r\.default_artisan_id IS NOT NULL/);
+  assert.match(migrationSource, /m\.artisan_id IS NULL/);
+  assert.match(migrationSource, /NOT IN \('completed', 'cancelled'\)/);
 });
 
 test("manager residency list exposes the default maintenance contact", () => {
