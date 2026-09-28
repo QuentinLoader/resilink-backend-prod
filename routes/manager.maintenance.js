@@ -1,9 +1,12 @@
 import express from "express";
 import pool from "../config/db.js";
 import { authenticateUser } from "../middleware/auth.js";
+import { requireManagerOperationalAccess } from "../middleware/commercialAccess.js";
 import { enforceManagerResidencyParam } from "../middleware/residencyScope.js";
 
 const router = express.Router();
+
+router.use(authenticateUser, requireManagerOperationalAccess);
 
 /* ===============================
    Allowed Status Transitions
