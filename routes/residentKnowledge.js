@@ -87,7 +87,10 @@ router.get("/:accessCode/template", async (req, res) => {
       `
       SELECT id, title, message, start_date, end_date
       FROM announcements
-      WHERE residency_id = $1 AND is_active = true
+      WHERE residency_id = $1
+      AND is_active = true
+      AND (start_date IS NULL OR start_date <= CURRENT_DATE)
+      AND (end_date IS NULL OR end_date >= CURRENT_DATE)
       ORDER BY created_at DESC
       `,
       [residencyId]
@@ -180,7 +183,10 @@ router.get("/:accessCode/template/search", async (req, res) => {
       `
       SELECT 'announcement' AS type, id, title, message AS content
       FROM announcements
-      WHERE residency_id = $1 AND is_active = true
+      WHERE residency_id = $1
+      AND is_active = true
+      AND (start_date IS NULL OR start_date <= CURRENT_DATE)
+      AND (end_date IS NULL OR end_date >= CURRENT_DATE)
       AND (title ILIKE $2 OR message ILIKE $2)
       `,
       [residencyId, search]
@@ -253,7 +259,10 @@ router.get("/residencies/:id/knowledge", async (req, res) => {
       `
       SELECT id, title, message, start_date, end_date
       FROM announcements
-      WHERE residency_id = $1 AND is_active = true
+      WHERE residency_id = $1
+      AND is_active = true
+      AND (start_date IS NULL OR start_date <= CURRENT_DATE)
+      AND (end_date IS NULL OR end_date >= CURRENT_DATE)
       ORDER BY created_at DESC
       `,
       [id]
@@ -331,7 +340,10 @@ router.get("/residencies/:id/knowledge/search", async (req, res) => {
       `
       SELECT 'announcement' AS type, id, title, message AS content
       FROM announcements
-      WHERE residency_id = $1 AND is_active = true
+      WHERE residency_id = $1
+      AND is_active = true
+      AND (start_date IS NULL OR start_date <= CURRENT_DATE)
+      AND (end_date IS NULL OR end_date >= CURRENT_DATE)
       AND (title ILIKE $2 OR message ILIKE $2)
       `,
       [id, search]
