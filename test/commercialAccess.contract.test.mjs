@@ -99,8 +99,13 @@ test("resident portal and maintenance routes enforce residency commercial access
 });
 
 test("new manager registration starts the 30-day trial", () => {
-  assert.match(publicSource, /startManagerTrialIfEligible\(managerDbId, client\)/);
+  assert.match(publicSource, /startManagerTrialIfEligible\(\s*managerDbId,\s*client\s*\)/);
   assert.match(publicSource, /30-day full-access trial/);
+  assert.match(publicSource, /getManagerAccountStateBySupabaseUserId/);
+  assert.doesNotMatch(publicSource, /residency_name/);
+  assert.doesNotMatch(publicSource, /property_type/);
+  assert.doesNotMatch(publicSource, /INSERT INTO residencies/);
+  assert.doesNotMatch(publicSource, /INSERT INTO manager_residencies/);
 });
 
 test("AddVision admin API is locked to the admin middleware and supports four states", () => {
