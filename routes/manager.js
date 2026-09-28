@@ -985,6 +985,49 @@ router.put(
         return res.status(gate.status).json(gate.body);
       }
 
+      const managerDbId = await getManagerDbId(req.user.id);
+
+      if (!managerDbId) {
+        return res.status(404).json({ error: "Manager not found" });
+      }
+
+      const jobAccess = await pool.query(
+        `
+        SELECT m.residency_id
+        FROM maintenance_requests m
+        JOIN manager_residencies mr
+          ON mr.residency_id = m.residency_id
+        WHERE m.id = $1
+          AND mr.manager_id = $2
+        LIMIT 1
+        `,
+        [id, managerDbId]
+      );
+
+      if (jobAccess.rows.length === 0) {
+        return res.status(404).json({ error: "Maintenance request not found" });
+      }
+
+      const residencyId = jobAccess.rows[0].residency_id;
+
+      const linkedArtisan = await pool.query(
+        `
+        SELECT 1
+        FROM residency_artisans
+        WHERE residency_id = $1
+          AND artisan_id = $2
+        LIMIT 1
+        `,
+        [residencyId, artisan_id]
+      );
+
+      if (linkedArtisan.rows.length === 0) {
+        return res.status(400).json({
+          error: "ARTISAN_NOT_LINKED",
+          message: "Link this artisan to the residency before assigning the request"
+        });
+      }
+
       const result = await pool.query(
         `
         UPDATE maintenance_requests
