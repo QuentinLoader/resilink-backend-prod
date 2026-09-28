@@ -12,6 +12,7 @@ import whatsappRoutes from "./routes/whatsapp.js";
 import { router as artisanRoutes } from "./routes/artisan.js";
 import { router as residentKnowledge } from "./routes/residentKnowledge.js";
 import internalRoutes from "./routes/internal.js";
+import adminRoutes from "./routes/admin.js";
 
 const app = express();
 
@@ -52,6 +53,12 @@ app.use(enforceSafeMode);
 ========================================= */
 
 app.use("/api/internal", internalRoutes);
+
+/* =========================================
+   AddVision Administration
+========================================= */
+
+app.use("/api/admin", adminRoutes);
 
 /* =========================================
    Public Routes
