@@ -1,6 +1,7 @@
 import express from "express";
 import pool from "../config/db.js";
 import { authenticateUser } from "../middleware/auth.js";
+import { requireManagerOperationalAccess } from "../middleware/commercialAccess.js";
 import crypto from "crypto";
 import {
   startManagerTrialIfEligible,
@@ -115,6 +116,12 @@ router.get("/account", authenticateUser, async (req, res) => {
     return res.status(500).json({ error: "Failed to fetch account state" });
   }
 });
+
+/* ===============================
+   COMMERCIAL ACCESS GATE
+   All operational manager routes below require TRIAL or PRO.
+================================ */
+router.use(authenticateUser, requireManagerOperationalAccess);
 
 /* ===============================
    GET MANAGER RESIDENCIES
