@@ -1720,19 +1720,42 @@ router.patch(
       return res.status(400).json({ error: "No valid announcement fields supplied" });
     }
 
-    const nextStart = Object.prototype.hasOwnProperty.call(req.body ?? {}, "start_date")
-      ? req.body.start_date || null
-      : null;
-    const nextEnd = Object.prototype.hasOwnProperty.call(req.body ?? {}, "end_date")
-      ? req.body.end_date || null
-      : null;
-
-    if (nextStart && nextEnd && String(nextEnd) < String(nextStart)) {
-      return res.status(400).json({ error: "end_date cannot be before start_date" });
-    }
-
     try {
       if (!(await requireManagerResidencyAccessForRequest(req, res, id))) return;
+
+      if (
+        Object.prototype.hasOwnProperty.call(req.body ?? {}, "start_date") ||
+        Object.prototype.hasOwnProperty.call(req.body ?? {}, "end_date")
+      ) {
+        const existing = await pool.query(
+          `
+          SELECT start_date, end_date
+          FROM announcements
+          WHERE id = $1
+            AND residency_id = $2
+          LIMIT 1
+          `,
+          [announcementId, id]
+        );
+
+        if (existing.rows.length === 0) {
+          return res.status(404).json({ error: "Announcement not found" });
+        }
+
+        const effectiveStart = Object.prototype.hasOwnProperty.call(req.body ?? {}, "start_date")
+          ? req.body.start_date || null
+          : existing.rows[0].start_date;
+        const effectiveEnd = Object.prototype.hasOwnProperty.call(req.body ?? {}, "end_date")
+          ? req.body.end_date || null
+          : existing.rows[0].end_date;
+
+        const startKey = effectiveStart ? String(effectiveStart).slice(0, 10) : null;
+        const endKey = effectiveEnd ? String(effectiveEnd).slice(0, 10) : null;
+
+        if (startKey && endKey && endKey < startKey) {
+          return res.status(400).json({ error: "end_date cannot be before start_date" });
+        }
+      }
 
       values.push(announcementId);
       const announcementIdParam = values.length;
@@ -1752,14 +1775,6 @@ router.patch(
 
       if (result.rows.length === 0) {
         return res.status(404).json({ error: "Announcement not found" });
-      }
-
-      if (
-        result.rows[0].start_date &&
-        result.rows[0].end_date &&
-        result.rows[0].end_date < result.rows[0].start_date
-      ) {
-        return res.status(400).json({ error: "end_date cannot be before start_date" });
       }
 
       return res.json(result.rows[0]);
