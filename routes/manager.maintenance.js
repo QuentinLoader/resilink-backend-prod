@@ -13,6 +13,8 @@ router.use(authenticateUser, requireManagerOperationalAccess);
 ================================ */
 const allowedTransitions = {
   pending: ["in_progress", "cancelled"],
+  claimed: ["in_progress", "cancelled"],
+  scheduled: ["in_progress", "cancelled"], // legacy status only
   in_progress: ["completed", "cancelled"],
   completed: [],
   cancelled: [],
@@ -166,8 +168,17 @@ router.put("/:id/status", authenticateUser, async (req, res) => {
     const updated = await pool.query(
       `
       UPDATE maintenance_requests
-      SET status = $1,
-          updated_at = NOW()
+      SET
+        status = $1,
+        started_at = CASE
+          WHEN $1 = 'in_progress' THEN COALESCE(started_at, NOW())
+          ELSE started_at
+        END,
+        completed_at = CASE
+          WHEN $1 = 'completed' THEN COALESCE(completed_at, NOW())
+          ELSE completed_at
+        END,
+        updated_at = NOW()
       WHERE id = $2
       RETURNING *;
       `,
