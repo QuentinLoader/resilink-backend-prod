@@ -1,6 +1,10 @@
 import { jwtVerify, createRemoteJWKSet, decodeProtectedHeader } from "jose";
 
-const SUPABASE_PROJECT_URL = "https://uxygywxiwkkaokbofvob.supabase.co";
+const SUPABASE_PROJECT_URL = process.env.SUPABASE_URL;
+if (!SUPABASE_PROJECT_URL || !SUPABASE_PROJECT_URL.trim()) {
+  throw new Error("SUPABASE_URL is required for token verification");
+}
+
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
 const JWKS = createRemoteJWKSet(
