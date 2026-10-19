@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "check": "node --check index.js && node --check routes/manager.js && node --check routes/manager.maintenance.js && node --check routes/public.js && node --check routes/resident.js && node --check routes/resident.maintenance.js && node --check routes/residentKnowledge.js && node --check routes/artisan.js && node --check routes/admin.js && node --check middleware/commercialAccess.js && node --check utils/planTrial.js && node --check jobs/trialNotifications.js",
+    "check": "node scripts/check.mjs",
     "test:kb": "node --test test/knowledgeBase.contract.test.mjs",
     "test:commercial": "node --test test/commercialAccess.contract.test.mjs",
     "test": "npm run test:kb && npm run test:commercial && npm run test:maintenance-contact && npm run test:maintenance-status",
@@ -16,8 +16,6 @@
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "jose": "^6.1.3",
-    "jsonwebtoken": "^9.0.3",
-    "node-fetch": "^3.3.2",
     "pg": "^8.11.3",
     "resend": "^6.9.4"
   }

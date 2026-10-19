@@ -22,7 +22,7 @@ function calculateDaysRemaining(trialEndsAt) {
   );
 }
 
-export function isTrialActive(trialEndsAt) {
+function isTrialActive(trialEndsAt) {
   if (!trialEndsAt) return false;
 
   const end = new Date(trialEndsAt);
