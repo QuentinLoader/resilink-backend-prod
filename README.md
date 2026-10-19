@@ -48,8 +48,9 @@ as Railway does. Local scripts do not automatically load `.env.local`.
 | PORT | Railway supplies the listening port; local default is 3000 |
 
 Do not change shared-cluster configuration for another application's benefit or
-remove its existing redirect URLs. See the frontend operations guide for the
-ResLink redirect patterns and custom-domain cutover.
+remove its existing redirect URLs. See the
+[frontend operations guide](https://github.com/QuentinLoader/resilink-frontend/blob/main/docs/operations.md)
+for the ResLink redirect patterns and custom-domain cutover.
 
 ## Checks and release
 
